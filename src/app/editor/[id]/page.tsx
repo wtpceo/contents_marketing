@@ -4,12 +4,30 @@ import { AppLayout } from "@/components/layout/AppLayout"
 import { LLMPanel } from "@/components/editor/LLMPanel"
 import { TiptapEditor } from "@/components/editor/TiptapEditor"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Save, Send, Loader2 } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { InstagramEditor } from "@/components/editor/InstagramEditor"
+import { ThreadsEditor } from "@/components/editor/ThreadsEditor"
+import { ArrowLeft, Save, Send, Loader2, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
+
+interface ChannelData {
+    blog?: {
+        title: string
+        html_body: string
+    }
+    instagram?: {
+        images: { prompt: string; url: string | null }[]
+        caption: string
+        hashtags: string[]
+    }
+    threads?: {
+        threads_text: string[]
+    }
+}
 
 interface ContentData {
     id: string
@@ -20,6 +38,8 @@ interface ContentData {
     status: string
     llm_prompt: string
     keywords: string[]
+    channel_data: ChannelData | null
+    selected_channels: string[] | null
     advertisers: {
         id: string
         name: string
@@ -39,23 +59,80 @@ export default function EditorPage() {
     const router = useRouter()
     const id = params?.id as string
 
+    const [advertisers, setAdvertisers] = useState<any[]>([])
+    const [selectedAdvertiserId, setSelectedAdvertiserId] = useState<string>("")
     const [contentData, setContentData] = useState<ContentData | null>(null)
-    const [content, setContent] = useState("")
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [activeTab, setActiveTab] = useState("blog")
+
+    // 채널별 콘텐츠 상태
+    const [contentMap, setContentMap] = useState<{
+        blog: string
+        instagram: string
+        threads: string
+    }>({
+        blog: '',
+        instagram: '',
+        threads: ''
+    })
+
+    // 인스타그램 추가 데이터
+    const [instagramMeta, setInstagramMeta] = useState<{
+        hashtags: string[]
+        images: { prompt: string; url: string | null }[]
+    }>({ hashtags: [], images: [] })
 
     // 콘텐츠 데이터 로드
     useEffect(() => {
         const fetchContent = async () => {
             try {
+                // Fetch advertisers first (or parallel)
+                const advResponse = await fetch("/api/advertisers")
+                if (advResponse.ok) {
+                    const advData = await advResponse.json()
+                    setAdvertisers(advData)
+                }
+
                 const response = await fetch(`/api/contents/${id}`)
                 if (!response.ok) {
                     throw new Error('콘텐츠를 찾을 수 없습니다.')
                 }
-                const data = await response.json()
+                const data: ContentData = await response.json()
                 setContentData(data)
-                setContent(data.body || '')
+
+                // channel_data가 있으면 각 채널별 상태 초기화
+                if (data.channel_data) {
+                    setContentMap({
+                        blog: data.channel_data.blog?.html_body || data.body || '',
+                        instagram: data.channel_data.instagram?.caption || '',
+                        threads: data.channel_data.threads?.threads_text?.join('\n\n---\n\n') || ''
+                    })
+
+                    if (data.channel_data.instagram) {
+                        setInstagramMeta({
+                            hashtags: data.channel_data.instagram.hashtags || [],
+                            images: data.channel_data.instagram.images || []
+                        })
+                    }
+                } else {
+                    // channel_data가 없으면 기존 body를 블로그로
+                    setContentMap({
+                        blog: data.body || '',
+                        instagram: '',
+                        threads: ''
+                    })
+                }
+
+                if (data.advertisers?.id) {
+                    setSelectedAdvertiserId(data.advertisers.id)
+                }
+
+                // 선택된 채널이 있으면 첫 번째 채널을 활성 탭으로
+                if (data.selected_channels && data.selected_channels.length > 0) {
+                    setActiveTab(data.selected_channels[0])
+                }
             } catch (err) {
                 console.error('Content fetch error:', err)
                 setError(err instanceof Error ? err.message : '콘텐츠 로딩 실패')
@@ -68,6 +145,47 @@ export default function EditorPage() {
             fetchContent()
         }
     }, [id])
+
+    // 채널별 콘텐츠 변경 핸들러
+    const handleContentChange = useCallback((channel: 'blog' | 'instagram' | 'threads', value: string) => {
+        setContentMap(prev => ({
+            ...prev,
+            [channel]: value
+        }))
+    }, [])
+
+    // LLM 생성 결과 처리 (OSMU)
+    const handleOSMUGenerate = useCallback((generatedData: any) => {
+        // generate-osmu API 응답 처리
+        if (generatedData.channel_data) {
+            const newContentMap = { ...contentMap }
+
+            if (generatedData.channel_data.blog) {
+                newContentMap.blog = generatedData.channel_data.blog.html_body || ''
+            }
+            if (generatedData.channel_data.instagram) {
+                newContentMap.instagram = generatedData.channel_data.instagram.caption || ''
+                setInstagramMeta({
+                    hashtags: generatedData.channel_data.instagram.hashtags || [],
+                    images: generatedData.channel_data.instagram.images || []
+                })
+            }
+            if (generatedData.channel_data.threads) {
+                newContentMap.threads = generatedData.channel_data.threads.threads_text?.join('\n\n---\n\n') || ''
+            }
+
+            setContentMap(newContentMap)
+            toast.success('OSMU 콘텐츠가 생성되었습니다!')
+        } else if (typeof generatedData === 'string') {
+            if (activeTab === 'instagram') {
+                setContentMap(prev => ({ ...prev, instagram: generatedData }))
+            } else if (activeTab === 'threads') {
+                setContentMap(prev => ({ ...prev, threads: generatedData }))
+            } else {
+                setContentMap(prev => ({ ...prev, blog: generatedData }))
+            }
+        }
+    }, [contentMap, activeTab])
 
     if (loading) {
         return (
@@ -97,20 +215,54 @@ export default function EditorPage() {
     const event = {
         id: contentData.id,
         title: contentData.title,
-        channels: contentData.keywords || [contentData.channel],
+        channels: (contentData.selected_channels || contentData.keywords || [contentData.channel]) as any,
         clientId: contentData.advertisers?.id,
         clientName: contentData.advertisers?.name,
         llmPrompt: contentData.llm_prompt,
         advertiser: contentData.advertisers,
+        date: contentData.scheduled_at ? new Date(contentData.scheduled_at) : new Date(),
+        status: contentData.status as any,
     }
+
+    // 선택된 채널 (없으면 기본 블로그)
+    const selectedChannels = contentData.selected_channels || ['blog']
+    const hasMultipleChannels = selectedChannels.length > 1
 
     const handleSave = async () => {
         setSaving(true)
         try {
+            // channel_data 구조로 저장
+            const channelData: ChannelData = {}
+
+            if (selectedChannels.includes('blog')) {
+                channelData.blog = {
+                    title: contentData.title,
+                    html_body: contentMap.blog
+                }
+            }
+
+            if (selectedChannels.includes('instagram')) {
+                channelData.instagram = {
+                    images: instagramMeta.images,
+                    caption: contentMap.instagram,
+                    hashtags: instagramMeta.hashtags
+                }
+            }
+
+            if (selectedChannels.includes('threads')) {
+                channelData.threads = {
+                    threads_text: contentMap.threads.split('\n\n---\n\n').filter(Boolean)
+                }
+            }
+
             const response = await fetch(`/api/contents/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ body: content })
+                body: JSON.stringify({
+                    body: contentMap.blog, // 대표 본문은 블로그 내용 유지
+                    channel_data: channelData,
+                    advertiser_id: selectedAdvertiserId
+                })
             })
 
             if (!response.ok) {
@@ -131,10 +283,37 @@ export default function EditorPage() {
         if (confirmed) {
             try {
                 // 먼저 저장
+                const channelData: ChannelData = {}
+
+                if (selectedChannels.includes('blog')) {
+                    channelData.blog = {
+                        title: contentData.title,
+                        html_body: contentMap.blog
+                    }
+                }
+
+                if (selectedChannels.includes('instagram')) {
+                    channelData.instagram = {
+                        images: instagramMeta.images,
+                        caption: contentMap.instagram,
+                        hashtags: instagramMeta.hashtags
+                    }
+                }
+
+                if (selectedChannels.includes('threads')) {
+                    channelData.threads = {
+                        threads_text: contentMap.threads.split('\n\n---\n\n').filter(Boolean)
+                    }
+                }
+
                 await fetch(`/api/contents/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ body: content, status: 'pending' })
+                    body: JSON.stringify({
+                        body: contentMap.blog,
+                        channel_data: channelData,
+                        status: 'pending'
+                    })
                 })
 
                 // 컨펌 요청 API 호출
@@ -143,9 +322,7 @@ export default function EditorPage() {
                 })
 
                 if (response.ok) {
-                    const data = await response.json()
                     toast.success(`컨펌 요청 완료! 미리보기 링크가 생성되었습니다.`)
-                    // 미리보기 링크 복사 또는 표시
                 } else {
                     toast.error('컨펌 요청에 실패했습니다.')
                 }
@@ -153,6 +330,25 @@ export default function EditorPage() {
                 console.error('Confirm request error:', err)
                 toast.error('오류가 발생했습니다.')
             }
+        }
+    }
+
+    const handleDelete = async () => {
+        if (!window.confirm("정말로 이 콘텐츠를 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.")) {
+            return
+        }
+
+        try {
+            const response = await fetch(`/api/contents/${id}`, { method: 'DELETE' })
+            if (response.ok) {
+                toast.success("삭제되었습니다.")
+                router.push('/dashboard')
+            } else {
+                toast.error("삭제 실패")
+            }
+        } catch (error) {
+            console.error(error)
+            toast.error("오류가 발생했습니다.")
         }
     }
 
@@ -170,12 +366,14 @@ export default function EditorPage() {
                         <div className="flex flex-col">
                             <div className="flex items-center gap-2">
                                 <h1 className="font-semibold text-sm">{contentData.title}</h1>
-                                <Badge variant="outline" className="text-xs uppercase">
-                                    {contentData.channel === 'blog_naver' ? 'Blog' : contentData.channel}
-                                </Badge>
                                 {contentData.advertisers && (
                                     <Badge variant="secondary" className="text-xs">
                                         {contentData.advertisers.name}
+                                    </Badge>
+                                )}
+                                {hasMultipleChannels && (
+                                    <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                                        OSMU {selectedChannels.length}채널
                                     </Badge>
                                 )}
                             </div>
@@ -185,6 +383,9 @@ export default function EditorPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-red-500 mr-2" onClick={handleDelete} title="삭제">
+                            <Trash2 className="h-4 w-4" />
+                        </Button>
                         <Button variant="outline" onClick={handleSave} disabled={saving}>
                             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                             임시 저장
@@ -198,15 +399,73 @@ export default function EditorPage() {
 
                 {/* Main Workspace */}
                 <div className="flex flex-1 overflow-hidden">
+                    {/* Left Panel: 30% */}
                     <LLMPanel
                         event={event}
-                        advertisers={contentData.advertisers ? [contentData.advertisers] : []}
-                        onGenerate={setContent}
+                        advertisers={advertisers}
+                        onGenerate={handleOSMUGenerate}
+                        onAdvertiserSelect={setSelectedAdvertiserId}
+                        activeChannel={activeTab}
                     />
-                    <div className="flex-1 bg-gray-50/50 p-8 overflow-y-auto">
-                        <div className="max-w-3xl mx-auto h-full">
-                            <TiptapEditor value={content} onChange={setContent} />
-                        </div>
+
+                    {/* Right Panel: 70% Variable Tabs */}
+                    <div className="flex-1 bg-gray-50 overflow-hidden flex flex-col">
+                        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                            <div className="border-b bg-white px-4 shrink-0">
+                                <TabsList className="h-12 bg-transparent">
+                                    {selectedChannels.includes('blog') && (
+                                        <TabsTrigger value="blog" className="data-[state=active]:bg-purple-50 data-[state=active]:text-purple-700 data-[state=active]:border-b-2 data-[state=active]:border-purple-600 rounded-none h-full px-6">
+                                            📝 블로그
+                                        </TabsTrigger>
+                                    )}
+                                    {selectedChannels.includes('instagram') && (
+                                        <TabsTrigger value="instagram" className="data-[state=active]:bg-purple-50 data-[state=active]:text-purple-700 data-[state=active]:border-b-2 data-[state=active]:border-purple-600 rounded-none h-full px-6">
+                                            📸 인스타그램
+                                        </TabsTrigger>
+                                    )}
+                                    {selectedChannels.includes('threads') && (
+                                        <TabsTrigger value="threads" className="data-[state=active]:bg-purple-50 data-[state=active]:text-purple-700 data-[state=active]:border-b-2 data-[state=active]:border-purple-600 rounded-none h-full px-6">
+                                            🧵 스레드
+                                        </TabsTrigger>
+                                    )}
+                                </TabsList>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-6 pb-20">
+                                {selectedChannels.includes('blog') && (
+                                    <TabsContent value="blog" className="min-h-full m-0">
+                                        <div className="max-w-3xl mx-auto min-h-full bg-white rounded-xl shadow-sm border p-8">
+                                            <TiptapEditor
+                                                value={contentMap.blog}
+                                                onChange={(v) => handleContentChange('blog', v)}
+                                            />
+                                        </div>
+                                    </TabsContent>
+                                )}
+
+                                {selectedChannels.includes('instagram') && (
+                                    <TabsContent value="instagram" className="min-h-full m-0">
+                                        <div className="min-h-full bg-white rounded-xl shadow-sm border p-6">
+                                            <InstagramEditor
+                                                content={contentMap.instagram}
+                                                onChange={(v) => handleContentChange('instagram', v)}
+                                            />
+                                        </div>
+                                    </TabsContent>
+                                )}
+
+                                {selectedChannels.includes('threads') && (
+                                    <TabsContent value="threads" className="min-h-full m-0">
+                                        <div className="min-h-full bg-white rounded-xl shadow-sm border p-6">
+                                            <ThreadsEditor
+                                                content={contentMap.threads}
+                                                onChange={(v) => handleContentChange('threads', v)}
+                                            />
+                                        </div>
+                                    </TabsContent>
+                                )}
+                            </div>
+                        </Tabs>
                     </div>
                 </div>
             </div>

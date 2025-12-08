@@ -104,15 +104,19 @@ ${keyMessage}
 ${selectedChannels.map(c => CHANNELS.find(ch => ch.id === c)?.label).join(', ')}
             `.trim()
 
+            // 대표 채널 결정 (blog 우선)
+            const primaryChannel = selectedChannels.includes('blog') ? 'blog_naver'
+                : selectedChannels.includes('instagram') ? 'instagram'
+                : 'threads'
+
             const payload = {
                 advertiser_id: selectedAdvertiserId,
                 title,
                 scheduled_at: new Date(date).toISOString(),
-                channel: selectedChannels[0], // 대표 채널 (DB 컬럼이 단일인 경우)
-                // 실제 OSMU 채널 정보와 키 메시지는 llm_prompt에 저장하여 에디터로 전달
+                channel: primaryChannel, // 대표 채널
                 llm_prompt: promptContext,
-                // 메타데이터로 전체 채널 저장 필요 시 keywords 필드 활용 가능
-                keywords: selectedChannels
+                selected_channels: selectedChannels, // OSMU 멀티채널 지원
+                channel_data: {} // 초기 빈 객체
             }
 
             let response;
@@ -160,93 +164,91 @@ ${selectedChannels.map(c => CHANNELS.find(ch => ch.id === c)?.label).join(', ')}
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4 py-4">
-                    import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select"
+                <form onSubmit={handleSubmit}>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label>광고주</Label>
+                            <Select
+                                value={selectedAdvertiserId}
+                                onValueChange={setSelectedAdvertiserId}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="광고주를 선택해주세요" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {advertisers.map(adv => (
+                                        <SelectItem key={adv.id} value={adv.id}>
+                                            {adv.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
 
-                    // ... inside component ...
-
-                    <div className="grid gap-2">
-                        <Label>광고주</Label>
-                        <Select
-                            value={selectedAdvertiserId}
-                            onValueChange={setSelectedAdvertiserId}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="광고주를 선택해주세요" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {advertisers.map(adv => (
-                                    <SelectItem key={adv.id} value={adv.id}>
-                                        {adv.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="grid gap-2">
-                        <Label htmlFor="title">주제 (Title)</Label>
-                        <Input
-                            id="title"
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            placeholder="예: 12월 크리스마스 이벤트 홍보"
-                        />
-                    </div>
-
-                    <div className="grid gap-2">
-                        <Label>발행 예정일</Label>
-                        <div className="relative">
-                            <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <div className="grid gap-2">
+                            <Label htmlFor="title">주제 (Title)</Label>
                             <Input
-                                type="date"
-                                value={date}
-                                onChange={(e) => setDate(e.target.value)}
-                                className="pl-8"
+                                id="title"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                placeholder="예: 12월 크리스마스 이벤트 홍보"
+                            />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label>발행 예정일</Label>
+                            <div className="relative">
+                                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    type="date"
+                                    value={date}
+                                    onChange={(e) => setDate(e.target.value)}
+                                    className="pl-8"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label>채널 (OSMU)</Label>
+                            <div className="flex gap-4">
+                                {CHANNELS.map((ch) => (
+                                    <div key={ch.id} className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id={ch.id}
+                                            checked={selectedChannels.includes(ch.id)}
+                                            onCheckedChange={() => handleChannelToggle(ch.id)}
+                                        />
+                                        <label
+                                            htmlFor={ch.id}
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                        >
+                                            {ch.label}
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="keyMessage">핵심 지시사항 (Key Message)</Label>
+                            <Textarea
+                                id="keyMessage"
+                                value={keyMessage}
+                                onChange={(e) => setKeyMessage(e.target.value)}
+                                placeholder="AI에게 전달할 핵심 내용, 톤앤매너, 필수 포함 키워드 등을 적어주세요."
+                                className="h-24 resize-none"
                             />
                         </div>
                     </div>
 
-                    <div className="grid gap-2">
-                        <Label>채널 (OSMU)</Label>
-                        <div className="flex gap-4">
-                            {CHANNELS.map((ch) => (
-                                <div key={ch.id} className="flex items-center space-x-2">
-                                    <Checkbox
-                                        id={ch.id}
-                                        checked={selectedChannels.includes(ch.id)}
-                                        onCheckedChange={() => handleChannelToggle(ch.id)}
-                                    />
-                                    <label
-                                        htmlFor={ch.id}
-                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                    >
-                                        {ch.label}
-                                    </label>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="grid gap-2">
-                        <Label htmlFor="keyMessage">핵심 지시사항 (Key Message)</Label>
-                        <Textarea
-                            id="keyMessage"
-                            value={keyMessage}
-                            onChange={(e) => setKeyMessage(e.target.value)}
-                            placeholder="AI에게 전달할 핵심 내용, 톤앤매너, 필수 포함 키워드 등을 적어주세요."
-                            className="h-24 resize-none"
-                        />
-                    </div>
-                </div>
-
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
-                    <Button onClick={handleSubmit} disabled={loading} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
-                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {selectedEvent ? '저장 후 에디터 열기' : '콘텐츠 생성 및 에디터 열기'}
-                    </Button>
-                </DialogFooter>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
+                        <Button type="submit" disabled={loading} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
+                            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {selectedEvent ? '저장 후 에디터 열기' : '콘텐츠 생성 및 에디터 열기'}
+                        </Button>
+                    </DialogFooter>
+                </form>
             </DialogContent>
         </Dialog>
     )

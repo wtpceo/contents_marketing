@@ -3,11 +3,12 @@
 import * as React from "react"
 import Link from 'next/link'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, startOfWeek, endOfWeek } from "date-fns"
-import { ChevronLeft, ChevronRight, Plus, Instagram, FileText, Youtube, Linkedin, Globe, Hash, Wand2, Trash2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Instagram, FileText, Youtube, Linkedin, Globe, Hash, Wand2, Trash2, Link2, Copy, ExternalLink, Check, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { FilterBar } from "./FilterBar"
 import { StatusWidget } from "./StatusWidget"
+import { useRouter } from "next/navigation"
 import { STATUS_COLORS } from "@/lib/mockData"
 import type { ContentEvent } from "@/lib/mockData"
 import { MagicPlanModal } from "./MagicPlanModal"
@@ -32,6 +33,7 @@ interface Advertiser {
 }
 
 export function CalendarView() {
+    const router = useRouter()
     const [currentDate, setCurrentDate] = React.useState(new Date())
     const [selectedClient, setSelectedClient] = React.useState("all")
     const [selectedChannel, setSelectedChannel] = React.useState("all")
@@ -49,6 +51,19 @@ export function CalendarView() {
         description: string
         action: () => Promise<void>
     }>({ open: false, title: "", description: "", action: async () => { } })
+
+    // 드래그 앤 드롭 상태
+    const [draggedEvent, setDraggedEvent] = React.useState<ContentEvent | null>(null)
+    const [dragOverDate, setDragOverDate] = React.useState<Date | null>(null)
+
+    // 기획안 공유 링크 상태
+    const [proposalLoading, setProposalLoading] = React.useState(false)
+    const [proposalData, setProposalData] = React.useState<{
+        token: string
+        share_url: string
+        status: string
+    } | null>(null)
+    const [linkCopied, setLinkCopied] = React.useState(false)
 
     const refreshData = async () => {
         setLoading(true)
@@ -163,6 +178,23 @@ export function CalendarView() {
         })
     }
 
+    const handleDeleteEvent = (event: ContentEvent) => {
+        setConfirmConfig({
+            open: true,
+            title: "콘텐츠 삭제",
+            description: `'${event.title}' 콘텐츠를 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.`,
+            action: async () => {
+                const res = await fetch(`/api/contents/${event.id}`, { method: "DELETE" })
+                if (res.ok) {
+                    toast.success("삭제되었습니다.")
+                    setEvents(prev => prev.filter(e => e.id !== event.id))
+                } else {
+                    toast.error("삭제에 실패했습니다.")
+                }
+            }
+        })
+    }
+
     const handleConfirmAction = async () => {
         setLoading(true)
         try {
@@ -175,8 +207,183 @@ export function CalendarView() {
         }
     }
 
-    const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1))
-    const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1))
+    const handlePrevMonth = () => {
+        setCurrentDate(subMonths(currentDate, 1))
+        setProposalData(null) // 월 변경 시 제안서 데이터 초기화
+    }
+    const handleNextMonth = () => {
+        setCurrentDate(addMonths(currentDate, 1))
+        setProposalData(null) // 월 변경 시 제안서 데이터 초기화
+    }
+
+    // 광고주 선택 변경 시 제안서 데이터 로드
+    React.useEffect(() => {
+        if (selectedClient !== "all") {
+            fetchProposalData()
+        } else {
+            setProposalData(null)
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedClient, currentDate])
+
+    // 제안서 데이터 조회
+    const fetchProposalData = async () => {
+        if (selectedClient === "all") return
+
+        const targetMonth = format(currentDate, "yyyy-MM")
+        try {
+            const res = await fetch(`/api/proposals?advertiser_id=${selectedClient}&target_month=${targetMonth}`)
+            if (res.ok) {
+                const data = await res.json()
+                if (data && data.token) {
+                    setProposalData({
+                        token: data.token,
+                        share_url: `/share/${data.token}`,
+                        status: data.status
+                    })
+                } else {
+                    setProposalData(null)
+                }
+            }
+        } catch (error) {
+            console.error("Proposal fetch error:", error)
+        }
+    }
+
+    // 기획안 링크 생성
+    const handleCreateProposalLink = async () => {
+        if (selectedClient === "all") {
+            toast.error("광고주를 먼저 선택해주세요.")
+            return
+        }
+
+        setProposalLoading(true)
+        try {
+            const targetMonth = format(currentDate, "yyyy-MM")
+            const res = await fetch("/api/proposals", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    advertiser_id: selectedClient,
+                    target_month: targetMonth,
+                })
+            })
+
+            const data = await res.json()
+
+            if (!res.ok) {
+                toast.error(data.error || "링크 생성에 실패했습니다.")
+                return
+            }
+
+            setProposalData({
+                token: data.token,
+                share_url: data.share_url,
+                status: data.status
+            })
+
+            if (data.is_new) {
+                toast.success("기획안 공유 링크가 생성되었습니다!")
+            } else {
+                toast.info("기존 링크가 업데이트되었습니다.")
+            }
+        } catch (error) {
+            console.error("Create proposal error:", error)
+            toast.error("링크 생성 중 오류가 발생했습니다.")
+        } finally {
+            setProposalLoading(false)
+        }
+    }
+
+    // 링크 복사
+    const handleCopyLink = async () => {
+        if (!proposalData) return
+
+        const fullUrl = `${window.location.origin}${proposalData.share_url}`
+        try {
+            await navigator.clipboard.writeText(fullUrl)
+            setLinkCopied(true)
+            toast.success("링크가 복사되었습니다!")
+            setTimeout(() => setLinkCopied(false), 2000)
+        } catch (error) {
+            toast.error("링크 복사에 실패했습니다.")
+        }
+    }
+
+    // 미리보기 열기
+    const handlePreview = () => {
+        if (!proposalData) return
+        window.open(proposalData.share_url, "_blank")
+    }
+
+    // 드래그 앤 드롭 핸들러
+    const handleDragStart = (e: React.DragEvent, event: ContentEvent) => {
+        setDraggedEvent(event)
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', event.id)
+        // 드래그 중인 요소 스타일
+        const target = e.target as HTMLElement
+        setTimeout(() => {
+            target.style.opacity = '0.5'
+        }, 0)
+    }
+
+    const handleDragEnd = (e: React.DragEvent) => {
+        const target = e.target as HTMLElement
+        target.style.opacity = '1'
+        setDraggedEvent(null)
+        setDragOverDate(null)
+    }
+
+    const handleDragOver = (e: React.DragEvent, day: Date) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        setDragOverDate(day)
+    }
+
+    const handleDragLeave = () => {
+        setDragOverDate(null)
+    }
+
+    const handleDrop = async (e: React.DragEvent, targetDate: Date) => {
+        e.preventDefault()
+        setDragOverDate(null)
+
+        if (!draggedEvent) return
+
+        // 같은 날짜면 무시
+        if (isSameDay(draggedEvent.date, targetDate)) {
+            setDraggedEvent(null)
+            return
+        }
+
+        const newDateStr = format(targetDate, "yyyy-MM-dd'T'HH:mm:ss")
+
+        try {
+            const res = await fetch(`/api/contents/${draggedEvent.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scheduled_at: newDateStr })
+            })
+
+            if (res.ok) {
+                // 로컬 상태 업데이트
+                setEvents(prev => prev.map(e =>
+                    e.id === draggedEvent.id
+                        ? { ...e, date: targetDate }
+                        : e
+                ))
+                toast.success(`'${draggedEvent.title}'을(를) ${format(targetDate, 'M월 d일')}로 이동했습니다.`)
+            } else {
+                toast.error('일정 이동에 실패했습니다.')
+            }
+        } catch (error) {
+            console.error('Drop error:', error)
+            toast.error('일정 이동 중 오류가 발생했습니다.')
+        }
+
+        setDraggedEvent(null)
+    }
 
     const monthStart = startOfMonth(currentDate)
     const monthEnd = endOfMonth(currentDate)
@@ -226,6 +433,50 @@ export function CalendarView() {
                     >
                         <Trash2 className="h-4 w-4" />
                     </Button>
+
+                    {/* 기획안 공유 링크 버튼 */}
+                    {proposalData ? (
+                        <div className="flex items-center gap-1 border rounded-lg px-2 bg-green-50 border-green-200">
+                            <span className="text-xs text-green-700 font-medium px-1">링크 생성됨</span>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleCopyLink}
+                                className="h-8 px-2 text-green-700 hover:text-green-800 hover:bg-green-100"
+                                title="링크 복사"
+                            >
+                                {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handlePreview}
+                                className="h-8 px-2 text-green-700 hover:text-green-800 hover:bg-green-100"
+                                title="미리보기"
+                            >
+                                <ExternalLink className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ) : (
+                        <Button
+                            variant="outline"
+                            onClick={handleCreateProposalLink}
+                            disabled={proposalLoading || selectedClient === "all"}
+                            className={cn(
+                                "border-dashed",
+                                selectedClient === "all" && "opacity-50"
+                            )}
+                            title={selectedClient === "all" ? "광고주를 먼저 선택하세요" : "기획안 공유 링크 생성"}
+                        >
+                            {proposalLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Link2 className="mr-2 h-4 w-4" />
+                            )}
+                            기획안 링크 생성
+                        </Button>
+                    )}
+
                     <Button
                         onClick={() => setShowMagicPlan(true)}
                         className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:to-pink-600 text-white border-0 shadow-md"
@@ -258,19 +509,24 @@ export function CalendarView() {
                 {days.map((day, dayIdx) => {
                     const dayEvents = filteredEvents.filter(e => isSameDay(e.date, day))
                     const isCurrentMonth = isSameMonth(day, currentDate)
+                    const isDragOver = dragOverDate && isSameDay(day, dragOverDate)
 
                     return (
                         <div
                             key={day.toString()}
                             className={cn(
                                 "relative min-h-[120px] bg-background p-2 text-left transition-colors border-t border-l border-gray-100 hover:bg-accent/10 group",
-                                !isCurrentMonth && "bg-gray-50/50 text-muted-foreground"
+                                !isCurrentMonth && "bg-gray-50/50 text-muted-foreground",
+                                isDragOver && "bg-purple-100 ring-2 ring-purple-400 ring-inset"
                             )}
                             onDoubleClick={() => {
                                 setSelectedBriefDate(day)
                                 setSelectedEventForBrief(null)
                                 setShowBriefModal(true)
                             }}
+                            onDragOver={(e) => handleDragOver(e, day)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDrop(e, day)}
                         >
                             <div className="flex justify-between items-start mb-1">
                                 <time
@@ -299,9 +555,17 @@ export function CalendarView() {
                                 {dayEvents.map(event => (
                                     <div
                                         key={event.id}
+                                        draggable
+                                        onDragStart={(e) => handleDragStart(e, event)}
+                                        onDragEnd={handleDragEnd}
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            setSelectedEvent(event)
+                                            // 'planning' maps to 'draft'/'writing' status
+                                            if (event.status === 'planning') {
+                                                router.push(`/editor/${event.id}`)
+                                            } else {
+                                                setSelectedEvent(event)
+                                            }
                                         }}
                                         onDoubleClick={(e) => {
                                             e.stopPropagation()
@@ -309,8 +573,9 @@ export function CalendarView() {
                                             setShowBriefModal(true)
                                         }}
                                         className={cn(
-                                            "flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-xs border shadow-sm transition-all hover:opacity-90 w-full min-w-0 cursor-pointer",
-                                            STATUS_COLORS[event.status]
+                                            "flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-xs border shadow-sm transition-all hover:opacity-90 w-full min-w-0 cursor-grab active:cursor-grabbing group/event",
+                                            STATUS_COLORS[event.status],
+                                            draggedEvent?.id === event.id && "opacity-50"
                                         )}>
                                         <div className="flex -space-x-1 shrink-0">
                                             {event.channels.map((ch: string) => {
@@ -323,6 +588,16 @@ export function CalendarView() {
                                             })}
                                         </div>
                                         <span className="truncate font-medium flex-1">{event.title}</span>
+                                        <div
+                                            role="button"
+                                            className="opacity-0 group-hover/event:opacity-100 p-0.5 hover:bg-black/20 rounded transition-opacity"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleDeleteEvent(event)
+                                            }}
+                                        >
+                                            <Trash2 className="h-3 w-3" />
+                                        </div>
                                     </div>
                                 ))}
                             </div>

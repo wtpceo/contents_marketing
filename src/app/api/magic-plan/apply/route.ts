@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-// POST: 매직 플랜 일괄 적용 (contents 테이블에 저장)
+// POST: 매직 플랜 일괄 적용 (topics + contents 테이블에 저장)
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
 
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { topics } = body
 
-  // topics: Array<{ date, title, description?, channels, advertiser_id }>
+  // topics: Array<{ date, title, description?, planning_intent?, channels, advertiser_id }>
 
   if (!topics || !Array.isArray(topics) || topics.length === 0) {
     return NextResponse.json(
@@ -42,16 +42,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '광고주를 찾을 수 없습니다.' }, { status: 404 })
   }
 
-  // 각 채널별로 contents 생성 (OSMU)
-  const insertData: any[] = []
+  // 1. topics 테이블에 기획안 저장 (제안서/공유용)
+  const topicsInsertData = topics.map(topic => ({
+    user_id: user.id,
+    advertiser_id: topic.advertiser_id,
+    title: topic.title,
+    description: topic.description || '',
+    scheduled_date: topic.date,
+    channels: topic.channels || ['blog'],
+    source: 'manual', // magic-plan에서 생성
+    source_data: { from: 'magic_plan' },
+    planning_intent: topic.planning_intent || '',
+    status: 'planning',
+  }))
 
-  for (const topic of topics) {
+  const { data: insertedTopics, error: topicsError } = await supabase
+    .from('topics')
+    .insert(topicsInsertData)
+    .select()
+
+  if (topicsError) {
+    console.error('Topics Insert Error:', topicsError)
+    return NextResponse.json(
+      { error: `기획안 저장 실패: ${topicsError.message}` },
+      { status: 500 }
+    )
+  }
+
+  // 2. contents 테이블에 각 채널별로 콘텐츠 생성 (OSMU)
+  const contentsInsertData: any[] = []
+
+  for (let i = 0; i < topics.length; i++) {
+    const topic = topics[i]
+    const savedTopic = insertedTopics?.[i]
     const channels = topic.channels || ['blog']
 
     for (const channel of channels) {
-      insertData.push({
+      contentsInsertData.push({
         user_id: user.id,
         advertiser_id: topic.advertiser_id,
+        topic_id: savedTopic?.id, // topics와 연결
         title: topic.title,
         body: topic.description || '',
         channel: channel === 'blog' ? 'blog_naver' : channel,
@@ -62,23 +92,29 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Bulk Insert to contents
-  const { data: insertedContents, error: insertError } = await supabase
+  const { data: insertedContents, error: contentsError } = await supabase
     .from('contents')
-    .insert(insertData)
+    .insert(contentsInsertData)
     .select()
 
-  if (insertError) {
-    console.error('Bulk Insert Error:', insertError)
-    return NextResponse.json(
-      { error: `저장 실패: ${insertError.message}` },
-      { status: 500 }
-    )
+  if (contentsError) {
+    console.error('Contents Insert Error:', contentsError)
+    // topics는 이미 저장됨, 부분 성공 응답
+    return NextResponse.json({
+      success: true,
+      partial: true,
+      topics_count: insertedTopics?.length || 0,
+      contents_count: 0,
+      error: `콘텐츠 저장 실패: ${contentsError.message}`,
+      topics: insertedTopics,
+    }, { status: 201 })
   }
 
   return NextResponse.json({
     success: true,
-    count: insertedContents?.length || 0,
+    topics_count: insertedTopics?.length || 0,
+    contents_count: insertedContents?.length || 0,
+    topics: insertedTopics,
     contents: insertedContents,
   }, { status: 201 })
 }

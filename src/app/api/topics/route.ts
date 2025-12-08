@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
     channels, // ["blog", "instagram", "threads"]
     source, // "trend" | "season" | "manual"
     source_data, // 트렌드/시즌 원본 데이터
+    planning_intent, // 기획 의도 (광고주에게 보여줄 전략적 설명)
   } = body
 
   if (!advertiser_id || !title || !scheduled_date) {
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
       channels: channels || ['blog'],
       source: source || 'manual',
       source_data,
+      planning_intent, // 기획 의도
       status: 'planning', // planning, approved, generating, completed
     })
     .select(`

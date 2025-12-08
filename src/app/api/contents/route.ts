@@ -74,6 +74,8 @@ export async function POST(request: NextRequest) {
     keywords,
     llm_prompt,
     images,
+    selected_channels, // OSMU 멀티채널 지원
+    channel_data,      // OSMU 채널별 콘텐츠 데이터
   } = body
 
   if (!advertiser_id || !title || !channel) {
@@ -105,6 +107,8 @@ export async function POST(request: NextRequest) {
       llm_prompt,
       images: images || [],
       status: 'draft',
+      selected_channels: selected_channels || [channel], // OSMU: 선택된 채널 목록
+      channel_data: channel_data || {},                   // OSMU: 채널별 콘텐츠 데이터
     })
     .select()
     .single()

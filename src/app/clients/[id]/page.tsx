@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +12,7 @@ import { ArrowLeft, Save, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { AiLearningTab } from '@/components/clients/AiLearningTab'
 
 interface Advertiser {
     id: string
@@ -26,6 +27,7 @@ interface Advertiser {
     description: string | null
     competitors: string | null
     detailed_info: string | null
+    advanced_profile: any
 }
 
 // 톤 영문 → 한글 변환
@@ -53,37 +55,40 @@ export default function ClientDetailsPage() {
     const [detailedInfo, setDetailedInfo] = useState('')
 
     // 광고주 데이터 불러오기
-    useEffect(() => {
-        const fetchClient = async () => {
-            if (!id) return;
+    const fetchClient = useCallback(async (showLoading = true) => {
+        if (!id) return;
 
-            try {
-                // MOCK ID check (legacy support)
-                if (id.startsWith('c')) {
-                    // ... mock handling if needed, but we prefer DB now
-                }
+        if (showLoading) setLoading(true)
 
-                const response = await fetch(`/api/advertisers/${id}`)
-                const data = await response.json()
-
-                if (!response.ok) {
-                    throw new Error(data.error || '광고주를 찾을 수 없습니다.')
-                }
-
-                setClient(data)
-                // 폼 초기값 설정
-                setCompetitors(data.competitors || '')
-                setForbiddenWords(data.forbidden_words?.join(', ') || '')
-                setDetailedInfo(data.detailed_info || '')
-            } catch (err) {
-                console.error("Fetch Error:", err);
-                setError(err instanceof Error ? err.message : '오류가 발생했습니다.')
-            } finally {
-                setLoading(false)
+        try {
+            // MOCK ID check (legacy support)
+            if (id.startsWith('c')) {
+                // ... mock handling if needed, but we prefer DB now
             }
+
+            const response = await fetch(`/api/advertisers/${id}`)
+            const data = await response.json()
+
+            if (!response.ok) {
+                throw new Error(data.error || '광고주를 찾을 수 없습니다.')
+            }
+
+            setClient(data)
+            // 폼 초기값 설정
+            setCompetitors(data.competitors || '')
+            setForbiddenWords(data.forbidden_words?.join(', ') || '')
+            setDetailedInfo(data.detailed_info || '')
+        } catch (err) {
+            console.error("Fetch Error:", err);
+            setError(err instanceof Error ? err.message : '오류가 발생했습니다.')
+        } finally {
+            if (showLoading) setLoading(false)
         }
-        fetchClient()
     }, [id])
+
+    useEffect(() => {
+        fetchClient(true)
+    }, [fetchClient])
 
     // 저장 기능
     const handleSave = async () => {
@@ -197,10 +202,11 @@ export default function ClientDetailsPage() {
                     </div>
                 </div>
 
-                <Tabs defaultValue="advanced" className="w-full">
+                <Tabs defaultValue="overview" className="w-full">
                     <TabsList>
                         <TabsTrigger value="overview">기본 정보</TabsTrigger>
-                        <TabsTrigger value="advanced">고급 설정 (LLM 최적화)</TabsTrigger>
+                        <TabsTrigger value="ai_learning">AI 학습 데이터</TabsTrigger>
+                        <TabsTrigger value="advanced">고급 설정 (수동)</TabsTrigger>
                         <TabsTrigger value="contents">콘텐츠 히스토리</TabsTrigger>
                     </TabsList>
 
@@ -231,6 +237,14 @@ export default function ClientDetailsPage() {
                                 </div>
                             </CardContent>
                         </Card>
+                    </TabsContent>
+
+                    <TabsContent value="ai_learning">
+                        <AiLearningTab
+                            clientId={client.id}
+                            advancedProfile={client.advanced_profile}
+                            onUpdate={(profile) => setClient(prev => prev ? ({ ...prev, advanced_profile: profile }) : null)}
+                        />
                     </TabsContent>
 
                     <TabsContent value="advanced">

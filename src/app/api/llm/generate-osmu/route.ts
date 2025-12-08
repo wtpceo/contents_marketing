@@ -151,59 +151,75 @@ ${channelRequirements}
       )
     }
 
-    // contents 테이블에 저장 (각 채널별로)
-    const savedContents = []
+    // channel_data JSONB 구조 생성
+    const channelDataObj: Record<string, any> = {}
 
     for (const channel of channels) {
-      const channelData = generatedContent[channel]
-      if (!channelData) continue
-
-      let title = topic
-      let contentBody = ''
+      const chData = generatedContent[channel]
+      if (!chData) continue
 
       if (channel === 'blog') {
-        title = channelData.title || topic
-        contentBody = channelData.body || ''
+        channelDataObj.blog = {
+          title: chData.title || topic,
+          html_body: chData.body || '',
+        }
       } else if (channel === 'instagram') {
-        title = topic
-        contentBody = JSON.stringify({
-          caption: channelData.caption,
-          hashtags: channelData.hashtags,
-          image_guide: channelData.image_guide,
-        })
+        channelDataObj.instagram = {
+          images: chData.image_guide ? [{ prompt: chData.image_guide, url: null }] : [],
+          caption: chData.caption || '',
+          hashtags: chData.hashtags || [],
+        }
       } else if (channel === 'threads') {
-        title = topic
-        contentBody = channelData.text || ''
-      }
-
-      const { data: content, error: contentError } = await supabase
-        .from('contents')
-        .insert({
-          user_id: user.id,
-          advertiser_id,
-          title,
-          body: contentBody,
-          channel: channel === 'blog' ? 'blog_naver' : channel,
-          scheduled_at: scheduled_at || null,
-          status: 'draft',
-          llm_prompt: topic,
-        })
-        .select()
-        .single()
-
-      if (!contentError && content) {
-        savedContents.push({
-          ...content,
-          generated: channelData,
-        })
+        channelDataObj.threads = {
+          threads_text: [chData.text || ''],
+        }
       }
     }
 
+    // 대표 채널 정보 (블로그 우선)
+    const primaryChannel = channels.includes('blog') ? 'blog_naver'
+      : channels.includes('instagram') ? 'instagram'
+      : 'threads'
+
+    const primaryBody = channelDataObj.blog?.html_body
+      || channelDataObj.instagram?.caption
+      || channelDataObj.threads?.threads_text?.[0]
+      || ''
+
+    const primaryTitle = channelDataObj.blog?.title || topic
+
+    // contents 테이블에 통합 저장 (OSMU: 하나의 레코드에 모든 채널 데이터)
+    const { data: savedContent, error: contentError } = await supabase
+      .from('contents')
+      .insert({
+        user_id: user.id,
+        advertiser_id,
+        title: primaryTitle,
+        body: primaryBody,
+        channel: primaryChannel,
+        scheduled_at: scheduled_at || null,
+        status: 'draft',
+        llm_prompt: topic,
+        channel_data: channelDataObj,
+        selected_channels: channels,
+      })
+      .select()
+      .single()
+
+    if (contentError) {
+      console.error('Content save error:', contentError)
+      return NextResponse.json(
+        { error: '콘텐츠 저장에 실패했습니다.' },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json({
+      id: savedContent.id,
       topic,
       channels,
-      generated: generatedContent,
-      saved: savedContents,
+      channel_data: channelDataObj,
+      content: savedContent,
       usage: completion.usage,
     })
 

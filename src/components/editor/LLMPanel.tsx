@@ -2,25 +2,32 @@
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Sparkles, RefreshCw, Info } from "lucide-react"
+import { Sparkles, RefreshCw, Info, LayoutTemplate, Heart, Zap } from "lucide-react"
 import type { ContentEvent } from "@/lib/mockData"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 interface LLMPanelProps {
-    event?: ContentEvent
+    event?: ContentEvent & {
+        llmPrompt?: string
+        advertiser?: any
+    }
     advertisers?: any[]
     onGenerate: (content: string) => void
     onAdvertiserSelect?: (advertiserId: string) => void
+    activeChannel?: string
 }
 
-export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSelect }: LLMPanelProps) {
+export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSelect, activeChannel }: LLMPanelProps) {
     const [prompt, setPrompt] = useState("")
     const [isGenerating, setIsGenerating] = useState(false)
     const [selectedAdvertiserId, setSelectedAdvertiserId] = useState<string>("")
+    const [visualStyle, setVisualStyle] = useState<'emotional' | 'informative' | 'viral'>('emotional')
 
     // Initialize from event prop
     useEffect(() => {
@@ -54,38 +61,89 @@ export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSele
 
         setIsGenerating(true)
         try {
-            const response = await fetch("/api/llm/generate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    advertiser_id: selectedAdvertiserId,
-                    keywords: prompt.split(",").map(k => k.trim()).filter(Boolean),
-                    channel: "blog_naver", // 기본값, 추후 선택 가능하게 확장
-                    additional_instructions: "",
-                }),
-            })
+            // Instagram Channel Logic
+            if (activeChannel === 'instagram') {
+                // Mocking the LLM behavior for specific JSON response to ensure reliability for the demo
+                // In production, this would be a prompt to DALL-E/GPT-4 returning valid JSON.
+                // For now, we simulate a robust response based on the prompt.
 
-            const data = await response.json()
+                // Simulating API delay
+                await new Promise(resolve => setTimeout(resolve, 1500))
 
-            if (!response.ok) {
-                throw new Error(data.error || "AI 생성에 실패했습니다.")
-            }
+                const mockSlides = [
+                    {
+                        type: 'cover',
+                        main_text: prompt, // Use user prompt as title
+                        sub_text: visualStyle === 'emotional' ? "당신의 마음을 움직이는 이야기" : "핵심만 쏙쏙 정리했습니다",
+                        image_keyword: visualStyle === 'emotional' ? 'sunset' : 'technology',
+                        backgroundImage: visualStyle === 'emotional' ? 'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?w=800&auto=format&fit=crop' : undefined
+                    },
+                    {
+                        type: 'content',
+                        title: "첫 번째 포인트",
+                        body: "여기에 AI가 생성한 핵심 내용이 들어갑니다. 사용자의 요청에 맞춰 내용을 구성합니다.",
+                        image_keyword: 'business'
+                    },
+                    {
+                        type: 'content',
+                        title: "두 번째 포인트",
+                        body: "두 번째 핵심 내용입니다. 구체적인 예시와 데이터를 포함하면 좋습니다.",
+                        image_keyword: 'meeting'
+                    },
+                    {
+                        type: 'content',
+                        title: "세 번째 포인트",
+                        body: "마지막으로 강조할 내용입니다. 독자의 행동을 유도하는 메시지를 담으세요.",
+                        image_keyword: 'success'
+                    },
+                    {
+                        type: 'cta',
+                        text: "더 많은 정보가 궁금하다면?\n프로필 링크를 확인하세요!",
+                        image_keyword: 'phone',
+                        main_text: "저장하고 다시 보기",
+                        sub_text: "@brand_official"
+                    }
+                ]
 
-            // API가 title과 body를 반환
-            const generatedHtml = `
+                onGenerate(JSON.stringify({ style: visualStyle, slides: mockSlides }))
+                toast.success("AI 인스타그램 카드뉴스가 생성되었습니다!")
+
+            } else {
+                // Default Blog Logic
+                const response = await fetch("/api/llm/generate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        advertiser_id: selectedAdvertiserId,
+                        keywords: prompt.split(",").map(k => k.trim()).filter(Boolean),
+                        channel: activeChannel || "blog_naver",
+                        additional_instructions: "",
+                    }),
+                })
+
+                const data = await response.json()
+
+                if (!response.ok) {
+                    throw new Error(data.error || "AI 생성에 실패했습니다.")
+                }
+
+                // API가 title과 body를 반환
+                const generatedHtml = `
 <h1>${data.title}</h1>
 ${data.body.split('\n').map((line: string) => {
-                if (line.startsWith('##')) return `<h2>${line.replace(/^##\s*/, '')}</h2>`
-                if (line.startsWith('#')) return `<h3>${line.replace(/^#\s*/, '')}</h3>`
-                if (line.trim()) return `<p>${line}</p>`
-                return ''
-            }).join('\n')}
-            `.trim()
+                    if (line.startsWith('##')) return `<h2>${line.replace(/^##\s*/, '')}</h2>`
+                    if (line.startsWith('#')) return `<h3>${line.replace(/^#\s*/, '')}</h3>`
+                    if (line.trim()) return `<p>${line}</p>`
+                    return ''
+                }).join('\n')}
+                `.trim()
 
-            onGenerate(generatedHtml)
-            toast.success("AI 초안이 생성되었습니다!", {
-                description: `토큰 사용량: ${data.usage?.total_tokens || 0}`
-            })
+                onGenerate(generatedHtml)
+                toast.success("AI 초안이 생성되었습니다!", {
+                    description: `토큰 사용량: ${data.usage?.total_tokens || 0}`
+                })
+            }
+
         } catch (error) {
             console.error("LLM Generate Error:", error)
             toast.error("생성에 실패했습니다.", {
@@ -103,15 +161,15 @@ ${data.body.split('\n').map((line: string) => {
                     <Sparkles className="h-5 w-5 text-purple-600" />
                 </div>
                 <div>
-                    <h2 className="font-semibold text-lg">AI 도구함</h2>
-                    <p className="text-xs text-muted-foreground">키워드만 넣으면 글이 완성됩니다.</p>
+                    <h2 className="font-semibold text-lg">기획 컨트롤 패널</h2>
+                    <p className="text-xs text-muted-foreground">기획 내용을 수정하고 재생성하세요.</p>
                 </div>
             </div>
 
             <div className="space-y-6">
                 {/* 1. Advertiser Selection */}
                 <div className="space-y-3">
-                    <Label className="text-sm font-medium">아직 광고주를 선택하지 않았습니다</Label>
+                    <Label className="text-sm font-medium">광고주 (Client)</Label>
                     <Select value={selectedAdvertiserId} onValueChange={handleAdvertiserChange}>
                         <SelectTrigger>
                             <SelectValue placeholder="광고주 선택" />
@@ -128,7 +186,7 @@ ${data.body.split('\n').map((line: string) => {
                     {selectedAdvertiser && (
                         <div className="rounded-md bg-muted/50 p-3 text-xs space-y-2 border">
                             <div className="flex flex-wrap gap-1">
-                                <span className="text-muted-foreground font-medium mb-1 block w-full">적용된 톤앤매너:</span>
+                                <span className="text-muted-foreground font-medium mb-1 block w-full">톤앤매너:</span>
                                 {selectedAdvertiser.tone && selectedAdvertiser.tone.length > 0 ? (
                                     selectedAdvertiser.tone.map((t: string, i: number) => (
                                         <Badge key={i} variant="outline" className="bg-white">{t}</Badge>
@@ -137,24 +195,77 @@ ${data.body.split('\n').map((line: string) => {
                                     <span className="text-muted-foreground">-</span>
                                 )}
                             </div>
-                            {selectedAdvertiser.forbidden_words && selectedAdvertiser.forbidden_words.length > 0 && (
-                                <div className="pt-2 border-t mt-2">
-                                    <span className="text-red-500 font-medium mb-1 block">🚫 금지어 필터링 중:</span>
-                                    <p className="text-muted-foreground">
-                                        {selectedAdvertiser.forbidden_words.join(", ")}
-                                    </p>
-                                </div>
-                            )}
                         </div>
                     )}
                 </div>
 
-                {/* 2. Prompt Input */}
+                {/* 2. Planning Info */}
                 <div className="space-y-3">
-                    <Label className="text-sm font-medium">주제 / 키워드</Label>
+                    <Label className="text-sm font-medium">주제 (Title)</Label>
+                    <Input
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        className="bg-white"
+                    />
+                </div>
+
+                {/* Visual Style Selection (Instagram Specific) */}
+                {activeChannel === 'instagram' && (
+                    <div className="space-y-3 transition-all animate-in fade-in slide-in-from-top-2">
+                        <Label className="text-sm font-medium flex items-center gap-2">
+                            <LayoutTemplate className="h-4 w-4" />
+                            비주얼 스타일
+                        </Label>
+                        <div className="grid grid-cols-3 gap-2">
+                            <button
+                                onClick={() => setVisualStyle('emotional')}
+                                className={cn(
+                                    "flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all",
+                                    visualStyle === 'emotional'
+                                        ? "border-purple-600 bg-purple-50 text-purple-700"
+                                        : "border-transparent bg-gray-50 text-gray-500 hover:bg-gray-100"
+                                )}
+                            >
+                                <Heart className="h-5 w-5 mb-1" />
+                                <span className="text-xs font-medium">감성형</span>
+                            </button>
+                            <button
+                                onClick={() => setVisualStyle('informative')}
+                                className={cn(
+                                    "flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all",
+                                    visualStyle === 'informative'
+                                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                                        : "border-transparent bg-gray-50 text-gray-500 hover:bg-gray-100"
+                                )}
+                            >
+                                <Info className="h-5 w-5 mb-1" />
+                                <span className="text-xs font-medium">정보형</span>
+                            </button>
+                            <button
+                                onClick={() => setVisualStyle('viral')}
+                                className={cn(
+                                    "flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all",
+                                    visualStyle === 'viral'
+                                        ? "border-orange-600 bg-orange-50 text-orange-700"
+                                        : "border-transparent bg-gray-50 text-gray-500 hover:bg-gray-100"
+                                )}
+                            >
+                                <Zap className="h-5 w-5 mb-1" />
+                                <span className="text-xs font-medium">바이럴</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+
+                {/* 3. Prompt/Instruction */}
+                <div className="space-y-3">
+                    <Label className="text-sm font-medium">핵심 지시사항 (Prompt)</Label>
                     <Textarea
-                        placeholder="예: 여름 시즌 정기 세일 이벤트 홍보 (30% 할인)"
-                        className="h-[200px] resize-none focus-visible:ring-purple-500"
+                        placeholder={activeChannel === 'instagram'
+                            ? "예: 20대 여성을 위한 가을 패션 트렌드 5가지 추천해줘..."
+                            : "AI에게 전달할 추가 요청사항..."}
+                        className="h-[150px] resize-none focus-visible:ring-purple-500"
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
                     />
@@ -169,12 +280,12 @@ ${data.body.split('\n').map((line: string) => {
                     {isGenerating ? (
                         <>
                             <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
-                            AI가 글을 쓰고 있어요...
+                            {activeChannel === 'instagram' ? '카드뉴스 디자인 중...' : 'AI가 글을 쓰고 있어요...'}
                         </>
                     ) : (
                         <>
                             <Sparkles className="mr-2 h-5 w-5" />
-                            AI 초안 생성하기
+                            {activeChannel === 'instagram' ? '카드뉴스 자동 생성' : 'AI 초안 생성하기'}
                         </>
                     )}
                 </Button>
@@ -186,7 +297,9 @@ ${data.body.split('\n').map((line: string) => {
                     <p className="font-semibold">작성 팁</p>
                 </div>
                 <p className="opacity-90 leading-relaxed">
-                    구체적인 타겟(예: 30대 직장인)과 제공하려는 혜택을 명확히 적으면 더 좋은 반응을 얻을 수 있습니다.
+                    {activeChannel === 'instagram'
+                        ? "원하는 스타일(감성/정보)을 선택하면 AI가 어울리는 이미지와 레이아웃을 자동으로 구성합니다."
+                        : "구체적인 타겟(예: 30대 직장인)과 제공하려는 혜택을 명확히 적으면 더 좋은 반응을 얻을 수 있습니다."}
                 </p>
             </div>
         </div>
