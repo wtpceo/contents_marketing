@@ -6,7 +6,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { Button } from '@/components/ui/button'
 import { Bold, Italic, List, ListOrdered, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 interface TiptapEditorProps {
     initialContent?: string
@@ -15,6 +15,8 @@ interface TiptapEditorProps {
 }
 
 export function TiptapEditor({ initialContent, value, onChange }: TiptapEditorProps) {
+    const lastValueRef = useRef<string | undefined>(value)
+
     const editor = useEditor({
         extensions: [
             StarterKit,
@@ -22,7 +24,7 @@ export function TiptapEditor({ initialContent, value, onChange }: TiptapEditorPr
                 placeholder: '내용을 작성하세요...',
             }),
         ],
-        content: initialContent || value,
+        content: initialContent || value || '',
         editorProps: {
             attributes: {
                 class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl mx-auto focus:outline-none min-h-[500px] p-6',
@@ -35,8 +37,10 @@ export function TiptapEditor({ initialContent, value, onChange }: TiptapEditorPr
 
     // Update content if value changes externally (e.g. from LLM gen)
     useEffect(() => {
-        if (editor && value && editor.getHTML() !== value) {
-            editor.commands.setContent(value)
+        if (editor && value !== undefined && value !== lastValueRef.current) {
+            console.log('[TiptapEditor] value 변경 감지, 에디터 업데이트:', value?.substring(0, 100))
+            editor.commands.setContent(value, false)
+            lastValueRef.current = value
         }
     }, [value, editor])
 

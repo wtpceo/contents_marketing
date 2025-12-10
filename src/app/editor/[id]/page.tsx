@@ -156,36 +156,60 @@ export default function EditorPage() {
 
     // LLM 생성 결과 처리 (OSMU)
     const handleOSMUGenerate = useCallback((generatedData: any) => {
+        // 채널 정규화 함수
+        const normalizeChannel = (ch: string) => {
+            if (ch.startsWith('blog')) return 'blog'
+            return ch
+        }
+        const normalizedTab = normalizeChannel(activeTab)
+
+        console.log('[handleOSMUGenerate] 받은 데이터:', generatedData)
+        console.log('[handleOSMUGenerate] activeTab:', activeTab, '-> normalized:', normalizedTab)
+
         // generate-osmu API 응답 처리
         if (generatedData.channel_data) {
-            const newContentMap = { ...contentMap }
+            setContentMap(prev => {
+                const newContentMap = { ...prev }
 
-            if (generatedData.channel_data.blog) {
-                newContentMap.blog = generatedData.channel_data.blog.html_body || ''
-            }
+                if (generatedData.channel_data.blog) {
+                    newContentMap.blog = generatedData.channel_data.blog.html_body || ''
+                }
+                if (generatedData.channel_data.instagram) {
+                    newContentMap.instagram = generatedData.channel_data.instagram.caption || ''
+                }
+                if (generatedData.channel_data.threads) {
+                    newContentMap.threads = generatedData.channel_data.threads.threads_text?.join('\n\n---\n\n') || ''
+                }
+
+                console.log('[handleOSMUGenerate] 새 contentMap:', newContentMap)
+                return newContentMap
+            })
+
             if (generatedData.channel_data.instagram) {
-                newContentMap.instagram = generatedData.channel_data.instagram.caption || ''
                 setInstagramMeta({
                     hashtags: generatedData.channel_data.instagram.hashtags || [],
                     images: generatedData.channel_data.instagram.images || []
                 })
             }
-            if (generatedData.channel_data.threads) {
-                newContentMap.threads = generatedData.channel_data.threads.threads_text?.join('\n\n---\n\n') || ''
-            }
-
-            setContentMap(newContentMap)
             toast.success('OSMU 콘텐츠가 생성되었습니다!')
         } else if (typeof generatedData === 'string') {
-            if (activeTab === 'instagram') {
-                setContentMap(prev => ({ ...prev, instagram: generatedData }))
-            } else if (activeTab === 'threads') {
-                setContentMap(prev => ({ ...prev, threads: generatedData }))
-            } else {
-                setContentMap(prev => ({ ...prev, blog: generatedData }))
-            }
+            console.log('[handleOSMUGenerate] 문자열 데이터, normalizedTab:', normalizedTab)
+            setContentMap(prev => {
+                const newMap = { ...prev }
+                if (normalizedTab === 'instagram') {
+                    newMap.instagram = generatedData
+                } else if (normalizedTab === 'threads') {
+                    newMap.threads = generatedData
+                } else {
+                    // blog, blog_naver, blog_tistory 등 모두 blog로 처리
+                    newMap.blog = generatedData
+                }
+                console.log('[handleOSMUGenerate] 업데이트된 contentMap:', newMap)
+                return newMap
+            })
+            toast.success('AI 초안이 생성되었습니다!')
         }
-    }, [contentMap, activeTab])
+    }, [activeTab])
 
     if (loading) {
         return (
@@ -225,8 +249,17 @@ export default function EditorPage() {
     }
 
     // 선택된 채널 (없으면 기본 블로그)
-    const selectedChannels = contentData.selected_channels || ['blog']
+    // blog_naver, blog_tistory 등을 blog로 정규화
+    const normalizeChannel = (ch: string) => {
+        if (ch.startsWith('blog')) return 'blog'
+        return ch
+    }
+    const rawChannels = contentData.selected_channels || [contentData.channel] || ['blog']
+    const selectedChannels = rawChannels.map(normalizeChannel).filter((v, i, a) => a.indexOf(v) === i)
     const hasMultipleChannels = selectedChannels.length > 1
+
+    // activeTab도 정규화된 채널 이름 사용
+    const normalizedActiveTab = normalizeChannel(activeTab)
 
     const handleSave = async () => {
         setSaving(true)
@@ -410,7 +443,7 @@ export default function EditorPage() {
 
                     {/* Right Panel: 70% Variable Tabs */}
                     <div className="flex-1 bg-gray-50 overflow-hidden flex flex-col">
-                        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                        <Tabs value={normalizedActiveTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0 overflow-hidden">
                             <div className="border-b bg-white px-4 shrink-0">
                                 <TabsList className="h-12 bg-transparent">
                                     {selectedChannels.includes('blog') && (

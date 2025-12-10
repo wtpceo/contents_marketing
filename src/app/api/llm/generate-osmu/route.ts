@@ -70,41 +70,91 @@ export async function POST(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const adv = advertiser as any
 
-  // 톤 설명 생성
-  const toneDescriptions = adv.tone
-    ?.map((t: string) => TONE_GUIDES[t])
-    .filter(Boolean)
-    .join(', ') || '자연스러운 톤'
+  // AI 학습 데이터 가져오기
+  const advancedProfile = adv.advanced_profile
+  const facts = advancedProfile?.facts || {}
+  const style = advancedProfile?.style || {}
+
+  // 톤 설명: AI 학습 스타일 우선
+  const toneDescriptions = style.tone
+    ? style.tone
+    : (adv.tone?.map((t: string) => TONE_GUIDES[t]).filter(Boolean).join(', ') || '자연스러운 톤')
 
   // 금지어 문자열
   const forbiddenWordsStr = adv.forbidden_words?.length > 0
     ? `\n\n[금지어 - 절대 사용 금지]: ${adv.forbidden_words.join(', ')}`
     : ''
 
-  // 브랜드 키워드
-  const brandKeywordsStr = adv.brand_keywords?.length > 0
-    ? `\n[브랜드 키워드 - 자연스럽게 포함]: ${adv.brand_keywords.join(', ')}`
+  // 브랜드 키워드: AI 학습 키워드 + 기본 키워드 병합
+  const allKeywords = [
+    ...(style.keywords || []),
+    ...(adv.brand_keywords || [])
+  ].filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+
+  const brandKeywordsStr = allKeywords.length > 0
+    ? `\n[브랜드 키워드 - 자연스럽게 포함]: ${allKeywords.slice(0, 15).join(', ')}`
     : ''
+
+  // === AI 학습 데이터 기반 상세 컨텍스트 ===
+  let businessContext = ''
+  let styleContext = ''
+
+  if (facts.business_name || facts.category) {
+    businessContext = `
+=== 비즈니스 정보 ===
+상호명: ${facts.business_name || adv.name}
+업종: ${facts.category || adv.industry || '일반'}
+${facts.address ? `위치: ${facts.address}` : ''}
+${facts.business_hours ? `영업시간: ${facts.business_hours}` : ''}
+${facts.rating ? `평점: ${facts.rating}점 (리뷰 ${facts.review_count || 0}개)` : ''}
+${facts.unique_features?.length > 0 ? `차별화 포인트: ${facts.unique_features.join(', ')}` : ''}
+${facts.review_highlights?.length > 0 ? `고객들이 좋아하는 점: ${facts.review_highlights.join(', ')}` : ''}
+${facts.menus?.length > 0 ? `대표 메뉴/상품: ${facts.menus.slice(0, 5).map((m: any) => m.name).join(', ')}` : ''}`
+  }
+
+  if (style.tone || style.writing_style) {
+    styleContext = `
+=== 콘텐츠 스타일 가이드 (이 스타일을 반드시 따라주세요) ===
+톤앤매너: ${style.tone || '자연스러운 톤'}
+${style.writing_style ? `글쓰기 스타일: ${style.writing_style}` : ''}
+${style.brand_personality ? `브랜드 성격: ${style.brand_personality}` : ''}
+${style.emoji_usage ? `이모지 사용: ${style.emoji_usage}` : ''}
+${style.emotional_keywords?.length > 0 ? `감성 키워드: ${style.emotional_keywords.join(', ')}` : ''}
+${style.visual_style ? `비주얼 톤: ${style.visual_style}` : ''}`
+  }
 
   // 채널별 요구사항 구성
   const channelRequirements = channels.map((ch: string) => {
     const guide = CHANNEL_GUIDES[ch as keyof typeof CHANNEL_GUIDES]
     if (!guide) return null
+
+    // 인스타그램일 경우 학습된 해시태그 추가
+    let extra = ''
+    if (ch === 'instagram' && style.hashtags?.length > 0) {
+      extra = `\n추천 해시태그 참고: ${style.hashtags.slice(0, 10).map((h: string) => h.startsWith('#') ? h : `#${h}`).join(' ')}`
+    }
+
     return `
 ### ${guide.name} (${ch})
 형식: ${guide.format}
-출력 필드: ${guide.outputFields.join(', ')}
+출력 필드: ${guide.outputFields.join(', ')}${extra}
 `
   }).filter(Boolean).join('\n')
 
-  // 시스템 프롬프트
-  const systemPrompt = `당신은 ${adv.industry || '일반'} 업종의 콘텐츠 마케팅 전문가입니다.
-${adv.name} 브랜드의 콘텐츠를 작성합니다.
+  const targetAudience = style.target_audience || adv.target_audience || '일반 대중'
 
-타겟 고객: ${adv.target_audience || '일반 대중'}
+  // 시스템 프롬프트
+  const systemPrompt = `당신은 ${facts.category || adv.industry || '일반'} 업종의 콘텐츠 마케팅 전문가입니다.
+${facts.business_name || adv.name} 브랜드의 콘텐츠를 작성합니다.
+${businessContext}
+${styleContext}
+
+타겟 고객: ${targetAudience}
 톤앤매너: ${toneDescriptions}
 ${forbiddenWordsStr}
 ${brandKeywordsStr}
+
+중요: 위의 스타일 가이드를 충실히 따르고, 비즈니스의 실제 정보를 자연스럽게 녹여내세요.
 
 반드시 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.`
 
@@ -119,7 +169,6 @@ ${channelRequirements}
 응답 형식 (JSON):
 {
   ${channels.map((ch: string) => {
-    const guide = CHANNEL_GUIDES[ch as keyof typeof CHANNEL_GUIDES]
     if (ch === 'blog') return `"blog": { "title": "제목", "body": "본문 (마크다운)" }`
     if (ch === 'instagram') return `"instagram": { "caption": "캡션", "hashtags": ["해시태그1", "해시태그2", ...], "image_guide": "이미지 설명" }`
     if (ch === 'threads') return `"threads": { "text": "스레드 텍스트" }`

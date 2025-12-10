@@ -4,18 +4,17 @@ import {
   scrapeNaverPlace,
   scrapeInstagram,
   scrapeWebsite,
-  simpleScrape,
 } from '@/lib/apify/client'
 import { analyzeAndRefine, AdvancedProfile, FactData, toLegacyProfile } from '@/lib/apify/analyzer'
 
 /**
  * POST /api/advertisers/sync
- * 광고주 외부 링크에서 데이터를 크롤링하고 AI로 분석하여 프로필 업데이트
+ * 광고주 외부 채널에서 데이터를 크롤링하고 AI로 분석하여 프로필 업데이트
  *
  * Request Body:
  * {
  *   "advertiser_id": "uuid",
- *   "naver_url": "https://naver.me/xxx",
+ *   "naver_url": "GnB어학원 고촌캠퍼스",  // 네이버 플레이스 상호명 (검색어)
  *   "instagram_url": "https://instagram.com/xxx",
  *   "website_url": "https://example.com",
  *   "rebranding_mode": false,           // 리브랜딩 모드
@@ -68,6 +67,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Apify 토큰 확인
+  if (!process.env.APIFY_API_TOKEN) {
+    return NextResponse.json(
+      { error: 'APIFY_API_TOKEN이 설정되지 않았습니다. 관리자에게 문의해주세요.' },
+      { status: 500 }
+    )
+  }
+
   // 광고주 조회 및 소유권 확인
   const { data: advertiser, error: advError } = await supabase
     .from('advertisers')
@@ -107,26 +114,32 @@ export async function POST(request: NextRequest) {
       const errors: string[] = []
       const crawlPromises: Promise<void>[] = []
 
-      // 1. 네이버 플레이스 크롤링
+      // 1. 네이버 플레이스 크롤링 (상호명 검색 - Apify 사용)
       if (naver_url) {
         crawlPromises.push((async () => {
-          console.log('[Sync] 네이버 플레이스 크롤링 시작:', naver_url)
+          console.log('[Sync] 네이버 플레이스 검색 시작 (상호명):', naver_url)
 
-          if (process.env.APIFY_API_TOKEN) {
+          try {
             const naverResult = await scrapeNaverPlace(naver_url)
+            console.log('[Sync] 네이버 플레이스 API 결과:', JSON.stringify(naverResult, null, 2))
+
             if (naverResult.success && naverResult.data) {
-              crawledData.naver = naverResult.data
+              // 데이터가 실제로 있는지 확인
+              const hasData = naverResult.data.name || naverResult.data.category || naverResult.data.address
+              if (hasData) {
+                crawledData.naver = naverResult.data
+                console.log('[Sync] 네이버 플레이스 크롤링 성공:', naverResult.data.name)
+              } else {
+                console.log('[Sync] 네이버 플레이스: 데이터가 비어있음')
+                errors.push('네이버: 크롤링 성공했으나 데이터가 비어있습니다')
+              }
             } else {
+              console.log('[Sync] 네이버 플레이스 크롤링 실패:', naverResult.error)
               errors.push(`네이버: ${naverResult.error}`)
             }
-          } else {
-            const simpleResult = await simpleScrape(naver_url)
-            if (simpleResult.success && simpleResult.data) {
-              crawledData.naver = {
-                name: simpleResult.data.title,
-                description: simpleResult.data.description || simpleResult.data.text?.substring(0, 500),
-              }
-            }
+          } catch (e) {
+            console.error('[Sync] 네이버 플레이스 크롤링 예외:', e)
+            errors.push(`네이버: ${e instanceof Error ? e.message : '크롤링 실패'}`)
           }
         })())
       }
@@ -149,27 +162,22 @@ export async function POST(request: NextRequest) {
         })())
       }
 
-      // 3. 웹사이트 크롤링
+      // 3. 웹사이트/블로그 크롤링
       if (finalWebsiteUrl) {
         crawlPromises.push((async () => {
-          console.log('[Sync] 웹사이트 크롤링 시작:', finalWebsiteUrl)
-
-          if (process.env.APIFY_API_TOKEN) {
+          console.log('[Sync] 웹사이트/블로그 크롤링 시작:', finalWebsiteUrl)
+          try {
             const webResult = await scrapeWebsite(finalWebsiteUrl)
             if (webResult.success && webResult.data) {
               crawledData.website = webResult.data
+              console.log('[Sync] 웹사이트/블로그 크롤링 성공')
             } else {
+              console.log('[Sync] 웹사이트/블로그 크롤링 실패:', webResult.error)
               errors.push(`웹사이트: ${webResult.error}`)
             }
-          } else {
-            const simpleResult = await simpleScrape(finalWebsiteUrl)
-            if (simpleResult.success && simpleResult.data) {
-              crawledData.website = {
-                title: simpleResult.data.title,
-                description: simpleResult.data.description,
-                texts: simpleResult.data.text ? [simpleResult.data.text] : [],
-              }
-            }
+          } catch (e) {
+            console.log('[Sync] 웹사이트/블로그 크롤링 예외:', e)
+            errors.push(`웹사이트: ${e instanceof Error ? e.message : '크롤링 실패'}`)
           }
         })())
       }
@@ -212,6 +220,13 @@ export async function POST(request: NextRequest) {
 
       // 모든 크롤링 병렬 실행
       await Promise.all(crawlPromises)
+
+      console.log('[Sync] 크롤링 완료. 수집된 데이터:', {
+        naver: crawledData.naver ? `있음 (name: ${crawledData.naver.name})` : '없음',
+        instagram: crawledData.instagram ? '있음' : '없음',
+        website: crawledData.website ? '있음' : '없음',
+        errors: errors,
+      })
 
       // 리브랜딩 모드: Fact 데이터가 없고 벤치마킹 데이터도 없으면 실패
       if (rebranding_mode) {
@@ -316,6 +331,12 @@ export async function POST(request: NextRequest) {
         ).slice(0, 10),
       }
 
+      // sources도 병합 (기존 소스 정보 유지하면서 새 소스 추가/업데이트)
+      const mergedSources = {
+        ...existingProfile.meta?.sources,  // 기존 소스 유지
+        ...newProfile.meta.sources,         // 새로 크롤링한 소스로 업데이트
+      }
+
       const mergedProfile: AdvancedProfile = {
         facts: mergedFacts,
         style: mergedStyle,
@@ -324,7 +345,7 @@ export async function POST(request: NextRequest) {
           sync_count: (existingProfile.meta?.sync_count || 0) + 1,
           is_rebranded: rebranding_mode,
           rebranding_source: rebranding_mode ? benchmark_url : existingProfile.meta?.rebranding_source,
-          sources: newProfile.meta.sources,
+          sources: mergedSources,  // 병합된 소스 정보 사용
         },
       }
 

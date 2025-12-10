@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Loader2, Sparkles, Link as LinkIcon, CheckCircle2, AlertCircle, Trophy, Users, Star, Lightbulb, RefreshCw, Database, Palette, MapPin, Clock, Phone, MessageSquare } from 'lucide-react'
+import { Loader2, Sparkles, Link as LinkIcon, CheckCircle2, AlertCircle, Trophy, Users, Star, Lightbulb, RefreshCw, Database, Palette, MapPin, Clock, Phone, MessageSquare, Globe, Instagram, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +24,429 @@ const LOADING_MESSAGES = [
     "마케팅 페르소나를 생성하고 있습니다...",
     "데이터를 종합하여 상세 리포트를 작성 중입니다..."
 ]
+
+// 데이터 소스 섹션 컴포넌트
+function DataSourcesSection({ advancedProfile }: { advancedProfile: any }) {
+    const [expandedSource, setExpandedSource] = useState<string | null>(null)
+
+    const sources = advancedProfile?.meta?.sources || {}
+    const facts = advancedProfile?.facts || {}
+    const style = advancedProfile?.style || {}
+
+    const hasNaverSource = !!sources.naver
+    const hasInstaSource = !!sources.instagram
+    const hasWebsiteSource = !!sources.website
+
+    if (!hasNaverSource && !hasInstaSource && !hasWebsiteSource) {
+        return null
+    }
+
+    const toggleSource = (source: string) => {
+        setExpandedSource(expandedSource === source ? null : source)
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-cyan-200">
+                <Database className="h-5 w-5 text-cyan-600" />
+                <h4 className="font-semibold text-cyan-800">데이터 소스</h4>
+                <Badge variant="outline" className="text-xs bg-cyan-50 border-cyan-200 text-cyan-600 ml-2">
+                    크롤링 원본
+                </Badge>
+            </div>
+
+            <div className="grid gap-3">
+                {/* 네이버 플레이스 소스 */}
+                {hasNaverSource && (
+                    <Card className={cn(
+                        "border-l-4 border-l-green-500 transition-all",
+                        expandedSource === 'naver' && "ring-2 ring-green-200"
+                    )}>
+                        <div
+                            className="p-4 cursor-pointer flex items-center justify-between hover:bg-green-50/50 transition-colors"
+                            onClick={() => toggleSource('naver')}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                                    <span className="text-green-600 font-bold text-sm">N</span>
+                                </div>
+                                <div>
+                                    <h5 className="font-medium text-sm">네이버 플레이스</h5>
+                                    <p className="text-xs text-muted-foreground">
+                                        리뷰 {sources.naver?.reviews_count || 0}개
+                                        {sources.naver?.images_count > 0 && <span> · 이미지 {sources.naver.images_count}개</span>}
+                                        {sources.naver?.menu_count > 0 && <span> · 메뉴 {sources.naver.menu_count}개</span>}
+                                        {sources.naver?.synced_at && (
+                                            <span className="ml-1">
+                                                · {new Date(sources.naver.synced_at).toLocaleDateString('ko-KR')}
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Badge className="bg-green-100 text-green-700 text-xs">수집완료</Badge>
+                                {expandedSource === 'naver' ? (
+                                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                )}
+                            </div>
+                        </div>
+
+                        {expandedSource === 'naver' && (
+                            <CardContent className="pt-0 border-t bg-green-50/30">
+                                <div className="space-y-3 pt-3">
+                                    <div className="text-xs font-medium text-green-700 flex items-center gap-1">
+                                        <Database className="h-3 w-3" />
+                                        크롤링된 원본 데이터
+                                    </div>
+                                    <div className="grid gap-2 text-sm">
+                                        {facts.business_name && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">상호명:</span>
+                                                <span className="font-medium">{facts.business_name}</span>
+                                            </div>
+                                        )}
+                                        {facts.category && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">업종:</span>
+                                                <span>{facts.category}</span>
+                                            </div>
+                                        )}
+                                        {facts.address && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">주소:</span>
+                                                <span>{facts.address}</span>
+                                            </div>
+                                        )}
+                                        {facts.contact && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">연락처:</span>
+                                                <span>{facts.contact}</span>
+                                            </div>
+                                        )}
+                                        {facts.business_hours && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">영업시간:</span>
+                                                <span>{facts.business_hours}</span>
+                                            </div>
+                                        )}
+                                        {(facts.rating || facts.review_count) && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">평점:</span>
+                                                <span className="flex items-center gap-1">
+                                                    {facts.rating && <><Star className="h-3 w-3 fill-amber-400 text-amber-400" />{facts.rating}</>}
+                                                    {facts.review_count > 0 && <span className="text-muted-foreground">(리뷰 {facts.review_count}개)</span>}
+                                                    {facts.visitor_review_count > 0 && <span className="text-muted-foreground text-xs">(방문자 {facts.visitor_review_count})</span>}
+                                                    {facts.blog_review_count > 0 && <span className="text-muted-foreground text-xs">(블로그 {facts.blog_review_count})</span>}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {facts.road_address && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">도로명:</span>
+                                                <span className="text-xs">{facts.road_address}</span>
+                                            </div>
+                                        )}
+                                        {facts.opening_status && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">영업상태:</span>
+                                                <Badge variant="outline" className={cn(
+                                                    "text-xs",
+                                                    facts.opening_status.includes('영업중') ? "bg-green-50 text-green-700" : "bg-gray-50"
+                                                )}>
+                                                    {facts.opening_status}
+                                                </Badge>
+                                            </div>
+                                        )}
+                                        {facts.price_range && (
+                                            <div className="flex gap-2">
+                                                <span className="text-muted-foreground min-w-[60px]">가격대:</span>
+                                                <span>{facts.price_range}</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* 이미지 썸네일 */}
+                                    {(facts.images?.length > 0 || facts.thumbnail_url) && (
+                                        <div className="mt-3">
+                                            <div className="text-xs text-muted-foreground mb-2">업체 이미지:</div>
+                                            <div className="flex gap-2 overflow-x-auto pb-2">
+                                                {facts.thumbnail_url && (
+                                                    <img
+                                                        src={facts.thumbnail_url}
+                                                        alt="대표 이미지"
+                                                        className="w-16 h-16 object-cover rounded-lg border-2 border-green-200"
+                                                    />
+                                                )}
+                                                {facts.images?.slice(0, 4).map((img: string, i: number) => (
+                                                    <img
+                                                        key={i}
+                                                        src={img}
+                                                        alt={`이미지 ${i + 1}`}
+                                                        className="w-16 h-16 object-cover rounded-lg border"
+                                                    />
+                                                ))}
+                                                {facts.images?.length > 4 && (
+                                                    <div className="w-16 h-16 bg-gray-100 rounded-lg border flex items-center justify-center text-xs text-muted-foreground">
+                                                        +{facts.images.length - 4}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* 링크들 */}
+                                    {(facts.place_url || facts.homepage_url || facts.blog_url || facts.booking_url) && (
+                                        <div className="mt-3">
+                                            <div className="text-xs text-muted-foreground mb-2">관련 링크:</div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {facts.place_url && (
+                                                    <a href={facts.place_url} target="_blank" rel="noopener noreferrer" className="text-xs text-green-600 hover:underline flex items-center gap-1">
+                                                        <MapPin className="h-3 w-3" /> 네이버 플레이스
+                                                    </a>
+                                                )}
+                                                {facts.homepage_url && (
+                                                    <a href={facts.homepage_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                                        <Globe className="h-3 w-3" /> 홈페이지
+                                                    </a>
+                                                )}
+                                                {facts.blog_url && (
+                                                    <a href={facts.blog_url} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-600 hover:underline flex items-center gap-1">
+                                                        <LinkIcon className="h-3 w-3" /> 블로그
+                                                    </a>
+                                                )}
+                                                {facts.booking_url && (
+                                                    <a href={facts.booking_url} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:underline flex items-center gap-1">
+                                                        <Clock className="h-3 w-3" /> 예약
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* 키워드/태그 */}
+                                    {facts.keywords?.length > 0 && (
+                                        <div className="mt-3">
+                                            <div className="text-xs text-muted-foreground mb-1">태그:</div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {facts.keywords.slice(0, 10).map((k: string, i: number) => (
+                                                    <Badge key={i} variant="secondary" className="text-xs">#{k}</Badge>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {facts.menus?.length > 0 && (
+                                        <div className="mt-3">
+                                            <div className="text-xs text-muted-foreground mb-1">메뉴/상품:</div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {facts.menus.slice(0, 8).map((m: any, i: number) => (
+                                                    <Badge key={i} variant="outline" className="text-xs bg-white">
+                                                        {m.name} {m.price && <span className="text-muted-foreground ml-1">{m.price}</span>}
+                                                    </Badge>
+                                                ))}
+                                                {facts.menus.length > 8 && (
+                                                    <Badge variant="outline" className="text-xs bg-white text-muted-foreground">
+                                                        +{facts.menus.length - 8}개 더
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {facts.review_highlights?.length > 0 && (
+                                        <div className="mt-3">
+                                            <div className="text-xs text-muted-foreground mb-1">리뷰 하이라이트:</div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {facts.review_highlights.slice(0, 5).map((h: string, i: number) => (
+                                                    <Badge key={i} className="text-xs bg-green-100 text-green-700 border-green-200">{h}</Badge>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="mt-3 pt-3 border-t border-dashed border-green-200">
+                                        <div className="text-xs font-medium text-purple-700 flex items-center gap-1 mb-2">
+                                            <Sparkles className="h-3 w-3" />
+                                            AI가 분석한 인사이트
+                                        </div>
+                                        {facts.unique_features?.length > 0 && (
+                                            <div className="space-y-1">
+                                                {facts.unique_features.slice(0, 3).map((f: string, i: number) => (
+                                                    <div key={i} className="text-xs text-gray-600 flex items-start gap-1">
+                                                        <span className="text-purple-500">•</span>
+                                                        {f}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </CardContent>
+                        )}
+                    </Card>
+                )}
+
+                {/* 인스타그램 소스 */}
+                {hasInstaSource && (
+                    <Card className={cn(
+                        "border-l-4 border-l-pink-500 transition-all",
+                        expandedSource === 'instagram' && "ring-2 ring-pink-200"
+                    )}>
+                        <div
+                            className="p-4 cursor-pointer flex items-center justify-between hover:bg-pink-50/50 transition-colors"
+                            onClick={() => toggleSource('instagram')}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center">
+                                    <Instagram className="h-4 w-4 text-white" />
+                                </div>
+                                <div>
+                                    <h5 className="font-medium text-sm">인스타그램</h5>
+                                    <p className="text-xs text-muted-foreground">
+                                        게시물 {sources.instagram?.posts_analyzed || 0}개 분석
+                                        {sources.instagram?.synced_at && (
+                                            <span className="ml-2">
+                                                · {new Date(sources.instagram.synced_at).toLocaleDateString('ko-KR')}
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Badge className="bg-pink-100 text-pink-700 text-xs">수집완료</Badge>
+                                {expandedSource === 'instagram' ? (
+                                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                )}
+                            </div>
+                        </div>
+
+                        {expandedSource === 'instagram' && (
+                            <CardContent className="pt-0 border-t bg-pink-50/30">
+                                <div className="space-y-3 pt-3">
+                                    <div className="text-xs font-medium text-pink-700 flex items-center gap-1">
+                                        <Database className="h-3 w-3" />
+                                        크롤링된 원본 데이터
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        인스타그램에서 게시물 캡션, 이미지 스타일, 해시태그 패턴을 수집했습니다.
+                                    </p>
+
+                                    <div className="mt-3 pt-3 border-t border-dashed border-pink-200">
+                                        <div className="text-xs font-medium text-purple-700 flex items-center gap-1 mb-2">
+                                            <Sparkles className="h-3 w-3" />
+                                            AI가 분석한 스타일
+                                        </div>
+                                        <div className="space-y-2">
+                                            {style.visual_style && (
+                                                <div className="text-xs">
+                                                    <span className="text-muted-foreground">비주얼 스타일:</span>
+                                                    <span className="ml-1 text-gray-700">{style.visual_style}</span>
+                                                </div>
+                                            )}
+                                            {style.emoji_usage && (
+                                                <div className="text-xs">
+                                                    <span className="text-muted-foreground">이모지 사용:</span>
+                                                    <span className="ml-1 text-gray-700">{style.emoji_usage}</span>
+                                                </div>
+                                            )}
+                                            {style.hashtags?.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mt-2">
+                                                    {style.hashtags.slice(0, 6).map((h: string, i: number) => (
+                                                        <Badge key={i} variant="outline" className="text-xs bg-white text-pink-600">
+                                                            #{h.replace('#', '')}
+                                                        </Badge>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        )}
+                    </Card>
+                )}
+
+                {/* 웹사이트/블로그 소스 */}
+                {hasWebsiteSource && (
+                    <Card className={cn(
+                        "border-l-4 border-l-blue-500 transition-all",
+                        expandedSource === 'website' && "ring-2 ring-blue-200"
+                    )}>
+                        <div
+                            className="p-4 cursor-pointer flex items-center justify-between hover:bg-blue-50/50 transition-colors"
+                            onClick={() => toggleSource('website')}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                    <Globe className="h-4 w-4 text-blue-600" />
+                                </div>
+                                <div>
+                                    <h5 className="font-medium text-sm">웹사이트/블로그</h5>
+                                    <p className="text-xs text-muted-foreground">
+                                        페이지 {sources.website?.pages_crawled || 0}개 수집
+                                        {sources.website?.synced_at && (
+                                            <span className="ml-2">
+                                                · {new Date(sources.website.synced_at).toLocaleDateString('ko-KR')}
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Badge className="bg-blue-100 text-blue-700 text-xs">수집완료</Badge>
+                                {expandedSource === 'website' ? (
+                                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                )}
+                            </div>
+                        </div>
+
+                        {expandedSource === 'website' && (
+                            <CardContent className="pt-0 border-t bg-blue-50/30">
+                                <div className="space-y-3 pt-3">
+                                    <div className="text-xs font-medium text-blue-700 flex items-center gap-1">
+                                        <Database className="h-3 w-3" />
+                                        크롤링된 원본 데이터
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        웹사이트/블로그에서 텍스트 콘텐츠와 메타 정보를 수집했습니다.
+                                    </p>
+
+                                    <div className="mt-3 pt-3 border-t border-dashed border-blue-200">
+                                        <div className="text-xs font-medium text-purple-700 flex items-center gap-1 mb-2">
+                                            <Sparkles className="h-3 w-3" />
+                                            AI가 분석한 글쓰기 스타일
+                                        </div>
+                                        <div className="space-y-2">
+                                            {style.writing_style && (
+                                                <div className="text-xs">
+                                                    <span className="text-muted-foreground">글쓰기 스타일:</span>
+                                                    <span className="ml-1 text-gray-700">{style.writing_style}</span>
+                                                </div>
+                                            )}
+                                            {style.tone && (
+                                                <div className="text-xs">
+                                                    <span className="text-muted-foreground">톤앤매너:</span>
+                                                    <Badge className="ml-1 bg-purple-100 text-purple-700 text-xs">{style.tone}</Badge>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        )}
+                    </Card>
+                )}
+            </div>
+        </div>
+    )
+}
 
 export function AiLearningTab({ clientId, advancedProfile, onUpdate, onRefresh }: AiLearningTabProps) {
     const [naverUrl, setNaverUrl] = useState('')
@@ -191,18 +614,22 @@ export function AiLearningTab({ clientId, advancedProfile, onUpdate, onRefresh }
                         <div className="space-y-2">
                             <Label className="flex items-center justify-between">
                                 <span className="flex items-center gap-2">
-                                    <span className="text-green-600 font-bold">N</span> 네이버 플레이스
+                                    <span className="text-green-600 font-bold">N</span> 네이버 플레이스 상호명
                                 </span>
                             </Label>
                             <div className="flex gap-2">
                                 <Input
-                                    placeholder="예: https://map.naver.com/p/entry/place/12345678"
+                                    placeholder="예: GnB어학원 고촌캠퍼스"
                                     value={naverUrl}
                                     onChange={(e) => setNaverUrl(e.target.value)}
                                     className="bg-white"
                                 />
                                 <Button variant="outline" onClick={() => handlePaste(setNaverUrl)}>붙여넣기</Button>
                             </div>
+                            <p className="text-xs text-amber-600 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                네이버 지도에 등록된 정확한 상호명을 입력해주세요. (예: "스타벅스 강남역점", "GnB어학원 고촌캠퍼스")
+                            </p>
                         </div>
 
                         <div className="space-y-2">
@@ -355,6 +782,9 @@ export function AiLearningTab({ clientId, advancedProfile, onUpdate, onRefresh }
                             )}
                         </div>
                     )}
+
+                    {/* ==================== DATA SOURCES SECTION ==================== */}
+                    <DataSourcesSection advancedProfile={advancedProfile} />
 
                     {/* ==================== FACT DATA SECTION ==================== */}
                     <div className="space-y-4">

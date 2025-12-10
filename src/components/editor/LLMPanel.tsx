@@ -24,7 +24,9 @@ interface LLMPanelProps {
 }
 
 export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSelect, activeChannel }: LLMPanelProps) {
-    const [prompt, setPrompt] = useState("")
+    const [topic, setTopic] = useState("")  // 주제 (핵심 키워드)
+    const [title, setTitle] = useState("")  // 제목 (선택사항)
+    const [prompt, setPrompt] = useState("")  // 추가 지시사항
     const [isGenerating, setIsGenerating] = useState(false)
     const [selectedAdvertiserId, setSelectedAdvertiserId] = useState<string>("")
     const [visualStyle, setVisualStyle] = useState<'emotional' | 'informative' | 'viral'>('emotional')
@@ -36,8 +38,9 @@ export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSele
                 setSelectedAdvertiserId(event.clientId)
                 onAdvertiserSelect?.(event.clientId)
             }
-            if (event.llmPrompt) setPrompt(event.llmPrompt)
-            else if (event.title) setPrompt(event.title)
+            // [매직플랜] 등 태그 제거 후 주제 설정
+            const cleanTitle = (event.llmPrompt || event.title || '').replace(/\[.*?\]/g, '').trim()
+            setTopic(cleanTitle)
         }
     }, [event])
 
@@ -50,8 +53,8 @@ export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSele
     }
 
     const handleGenerate = async () => {
-        if (!prompt) {
-            toast.error("주제/키워드를 입력해주세요.")
+        if (!topic) {
+            toast.error("주제를 입력해주세요.")
             return
         }
         if (!selectedAdvertiserId) {
@@ -73,7 +76,7 @@ export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSele
                 const mockSlides = [
                     {
                         type: 'cover',
-                        main_text: prompt, // Use user prompt as title
+                        main_text: title || topic, // 제목이 있으면 사용, 없으면 주제 사용
                         sub_text: visualStyle === 'emotional' ? "당신의 마음을 움직이는 이야기" : "핵심만 쏙쏙 정리했습니다",
                         image_keyword: visualStyle === 'emotional' ? 'sunset' : 'technology',
                         backgroundImage: visualStyle === 'emotional' ? 'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?w=800&auto=format&fit=crop' : undefined
@@ -115,9 +118,9 @@ export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSele
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         advertiser_id: selectedAdvertiserId,
-                        keywords: prompt.split(",").map(k => k.trim()).filter(Boolean),
+                        keywords: [topic],  // 주제를 키워드로 전달
                         channel: activeChannel || "blog_naver",
-                        additional_instructions: "",
+                        additional_instructions: title ? `제목: ${title}\n${prompt}` : prompt,  // 제목 + 추가 지시사항
                     }),
                 })
 
@@ -127,16 +130,19 @@ export function LLMPanel({ event, advertisers = [], onGenerate, onAdvertiserSele
                     throw new Error(data.error || "AI 생성에 실패했습니다.")
                 }
 
-                // API가 title과 body를 반환
-                const generatedHtml = `
-<h1>${data.title}</h1>
-${data.body.split('\n').map((line: string) => {
-                    if (line.startsWith('##')) return `<h2>${line.replace(/^##\s*/, '')}</h2>`
-                    if (line.startsWith('#')) return `<h3>${line.replace(/^#\s*/, '')}</h3>`
-                    if (line.trim()) return `<p>${line}</p>`
-                    return ''
-                }).join('\n')}
-                `.trim()
+                // 마크다운 기호 제거 및 HTML 변환
+                const cleanBody = data.body
+                    .replace(/\*\*/g, '')  // ** 제거
+                    .replace(/^\s*##\s*/gm, '')  // ## 제거
+                    .replace(/^\s*#\s*/gm, '')   // # 제거
+                    .replace(/^\s*-\s*/gm, '')   // - 리스트 제거
+
+                // 제목이 사용자 입력이면 사용, 아니면 API 결과 사용
+                const finalTitle = title || data.title
+
+                // 본문을 문단으로 분리하여 HTML 생성
+                const paragraphs = cleanBody.split('\n').filter((line: string) => line.trim())
+                const generatedHtml = `<h1>${finalTitle}</h1>\n${paragraphs.map((p: string) => `<p>${p.trim()}</p>`).join('\n\n')}`.trim()
 
                 onGenerate(generatedHtml)
                 toast.success("AI 초안이 생성되었습니다!", {
@@ -199,12 +205,25 @@ ${data.body.split('\n').map((line: string) => {
                     )}
                 </div>
 
-                {/* 2. Planning Info */}
+                {/* 2. 주제 (Topic) */}
                 <div className="space-y-3">
-                    <Label className="text-sm font-medium">주제 (Title)</Label>
+                    <Label className="text-sm font-medium">주제 (Topic)</Label>
                     <Input
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
+                        value={topic}
+                        onChange={(e) => setTopic(e.target.value)}
+                        placeholder="예: 강남 맛집 추천, 여름 패션 트렌드..."
+                        className="bg-white"
+                    />
+                    <p className="text-xs text-muted-foreground">콘텐츠의 핵심 키워드를 입력하세요.</p>
+                </div>
+
+                {/* 3. 제목 (Title) - 선택사항 */}
+                <div className="space-y-3">
+                    <Label className="text-sm font-medium">제목 (Title) <span className="text-muted-foreground font-normal">- 선택</span></Label>
+                    <Input
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder="입력하지 않으면 AI가 자동 생성합니다"
                         className="bg-white"
                     />
                 </div>
@@ -258,23 +277,23 @@ ${data.body.split('\n').map((line: string) => {
                 )}
 
 
-                {/* 3. Prompt/Instruction */}
+                {/* 4. 추가 지시사항 (Prompt) - 선택사항 */}
                 <div className="space-y-3">
-                    <Label className="text-sm font-medium">핵심 지시사항 (Prompt)</Label>
+                    <Label className="text-sm font-medium">추가 지시사항 <span className="text-muted-foreground font-normal">- 선택</span></Label>
                     <Textarea
                         placeholder={activeChannel === 'instagram'
-                            ? "예: 20대 여성을 위한 가을 패션 트렌드 5가지 추천해줘..."
-                            : "AI에게 전달할 추가 요청사항..."}
-                        className="h-[150px] resize-none focus-visible:ring-purple-500"
+                            ? "예: 20대 여성 타겟, 감성적인 톤으로..."
+                            : "예: 30대 직장인 타겟, 전문적인 톤으로..."}
+                        className="h-[100px] resize-none focus-visible:ring-purple-500"
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
                     />
                 </div>
 
-                {/* 3. Generate Button */}
+                {/* 5. Generate Button */}
                 <Button
                     className="w-full h-12 text-base font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-md transition-all hover:scale-[1.02]"
-                    disabled={isGenerating || !prompt}
+                    disabled={isGenerating || !topic}
                     onClick={handleGenerate}
                 >
                     {isGenerating ? (

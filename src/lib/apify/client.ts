@@ -45,9 +45,9 @@ async function runApifyActor(actorId: string, input: object): Promise<ApifyRunRe
       return { success: false, data: null, error: 'Run ID를 받지 못했습니다.' }
     }
 
-    // 완료까지 대기 (최대 2분)
-    const maxWaitTime = 120000
-    const pollInterval = 3000
+    // 완료까지 대기 (최대 5분 - Puppeteer는 시간이 오래 걸림)
+    const maxWaitTime = 300000
+    const pollInterval = 5000
     let elapsed = 0
 
     while (elapsed < maxWaitTime) {
@@ -86,121 +86,235 @@ async function runApifyActor(actorId: string, input: object): Promise<ApifyRunRe
   }
 }
 
-async function resolveRedirect(url: string): Promise<string> {
-  try {
-    const response = await fetch(url, { method: 'HEAD', redirect: 'follow' })
-    return response.url
-  } catch (e) {
-    return url
-  }
+
+// 네이버 플레이스 크롤링 결과 타입 (모든 필드 포함)
+export interface NaverPlaceData {
+  // 기본 정보
+  name?: string
+  category?: string
+  address?: string
+  roadAddress?: string      // 도로명 주소
+  phone?: string
+  description?: string
+  businessHours?: string
+
+  // 평점 및 리뷰
+  rating?: number
+  reviewCount?: number
+  visitorReviewCount?: number  // 방문자 리뷰 수
+  blogReviewCount?: number     // 블로그 리뷰 수
+
+  // 리뷰 상세
+  reviews?: {
+    text: string
+    rating?: number
+    date?: string
+    nickname?: string
+    visitCount?: number
+  }[]
+
+  // 메뉴/상품
+  menu?: {
+    name: string
+    price?: string
+    description?: string
+    isPopular?: boolean
+    images?: string[]
+  }[]
+
+  // 이미지
+  images?: string[]
+  thumbnailUrl?: string
+
+  // 위치 정보
+  latitude?: number
+  longitude?: number
+  mapUrl?: string
+  placeUrl?: string          // 네이버 플레이스 URL
+
+  // 편의시설 및 특징
+  facilities?: string[]      // 편의시설 (주차, 와이파이 등)
+  keywords?: string[]        // 태그/키워드
+  options?: string[]         // 옵션 (예약, 포장 등)
+
+  // 영업 정보
+  openingStatus?: string     // 현재 영업 상태
+  priceRange?: string        // 가격대
+
+  // 기타
+  bookingUrl?: string        // 예약 URL
+  orderUrl?: string          // 주문 URL
+  homepageUrl?: string       // 홈페이지
+  blogUrl?: string           // 블로그
+
+  // Raw 데이터 (파싱되지 않은 추가 정보)
+  rawData?: any
 }
 
 /**
  * 네이버 플레이스 크롤링
- * Actor: apify/naver-map-scraper (예시 - 실제 Actor ID로 교체 필요)
+ * 검색어(상호명) 기반으로 네이버 맵에서 데이터 수집
+ * @param keyword 상호명 (예: "GnB어학원 고촌캠퍼스")
  */
-export async function scrapeNaverPlace(url: string): Promise<{
+export async function scrapeNaverPlace(keyword: string): Promise<{
   success: boolean
-  data: {
-    name?: string
-    category?: string
-    address?: string
-    phone?: string
-    description?: string
-    reviews?: { text: string; rating?: number }[]
-    menu?: { name: string; price?: string }[]
-    images?: string[]
-    businessHours?: string
-    rating?: number
-    reviewCount?: number
-  } | null
+  data: NaverPlaceData | null
   error?: string
 }> {
-  // 1. 단축 URL 처리 (naver.me)
-  let targetUrl = url
-  if (url.includes('naver.me')) {
-    targetUrl = await resolveRedirect(url)
-  }
-
-  // 2. URL 유효성 검사 및 ID 추출
-  // https://map.naver.com/p/entry/place/12345678...
-  const placeIdMatch = targetUrl.match(/place\/(\d+)/) || targetUrl.match(/restaurant\/(\d+)/)
-  if (!placeIdMatch) {
+  if (!APIFY_API_TOKEN) {
     return {
       success: false,
       data: null,
-      error: '유효한 네이버 플레이스 URL이 아닙니다. (예: https://map.naver.com/p/entry/place/번호...)'
+      error: 'APIFY_API_TOKEN이 설정되지 않았습니다.'
     }
   }
 
-  const placeId = placeIdMatch[1]
-
-  // Web Scraper Actor 사용 (범용)
-  // 실제 프로덕션에서는 네이버 전용 Actor 사용 권장
-  const result = await runApifyActor('apify/web-scraper', {
-    startUrls: [{ url: targetUrl }],
-    pageFunction: `async function pageFunction(context) {
-      const { $, request } = context;
-
-      // 네이버 플레이스 페이지 파싱
-      const name = $('span.GHAhO').text() || $('h2.place_name').text();
-      const category = $('span.lnJFt').text();
-      const address = $('span.LDgIH').text();
-      const description = $('div.T8RFa').text();
-      const rating = $('span.PXMot em').text();
-
-      // 리뷰 수집
-      const reviews = [];
-      $('li.pui__X35jYm').each((i, el) => {
-        if (i < 30) {
-          reviews.push({
-            text: $(el).find('a.pui__xtsQN-').text(),
-            rating: parseFloat($(el).find('span.pui__IKs9t').text()) || null
-          });
-        }
-      });
-
-      // 메뉴 수집
-      const menu = [];
-      $('li.E2jtL').each((i, el) => {
-        menu.push({
-          name: $(el).find('span.lPzHi').text(),
-          price: $(el).find('div.GXS1X em').text()
-        });
-      });
-
-      return {
-        url: request.url,
-        name,
-        category,
-        address,
-        description,
-        rating: parseFloat(rating) || null,
-        reviews,
-        menu
-      };
-    }`,
-    proxyConfiguration: { useApifyProxy: true },
-    maxConcurrency: 1,
-  })
-
-  if (!result.success) {
-    return { success: false, data: null, error: result.error }
+  if (!keyword || keyword.trim().length < 2) {
+    return {
+      success: false,
+      data: null,
+      error: '상호명을 2글자 이상 입력해주세요.'
+    }
   }
 
-  const item = result.data?.[0] || {}
-  return {
-    success: true,
-    data: {
-      name: item.name,
-      category: item.category,
-      address: item.address,
-      description: item.description,
-      reviews: item.reviews || [],
-      menu: item.menu || [],
-      rating: item.rating,
-      reviewCount: item.reviews?.length || 0,
-    },
+  try {
+    console.log('[NaverPlace] 검색어:', keyword)
+
+    // 네이버 맵 전용 Actor 사용 - keywords는 배열로 전달
+    const result = await runApifyActor('delicious_zebu/naver-map-search-results-scraper', {
+      keywords: [keyword.trim()],
+    })
+
+    console.log('[NaverPlace] Apify 원본 결과:', JSON.stringify(result, null, 2))
+
+    if (!result.success) {
+      return { success: false, data: null, error: result.error }
+    }
+
+    if (!result.data || result.data.length === 0) {
+      return { success: false, data: null, error: `"${keyword}"에 대한 검색 결과가 없습니다. 정확한 상호명을 입력해주세요.` }
+    }
+
+    const item = result.data[0]
+    console.log('[NaverPlace] 첫 번째 결과 키:', Object.keys(item))
+
+    // 헬퍼 함수: 여러 필드명 중 값이 있는 것 반환
+    const getField = (...keys: string[]) => {
+      for (const key of keys) {
+        if (item[key] !== undefined && item[key] !== null && item[key] !== '') {
+          return item[key]
+        }
+      }
+      return undefined
+    }
+
+    // 리뷰 파싱 (최대 30개)
+    const rawReviews = getField('Reviews', 'reviews', 'VisitorReviews', 'visitorReviews') || []
+    const reviews = rawReviews.slice(0, 30).map((r: any) => ({
+      text: r.Content || r.ReviewTitle || r.text || r.body || r.content || r.review || '',
+      rating: r.Rating || r.rating || r.score || null,
+      date: r.Date || r.date || r.visitDate || r.createdAt || null,
+      nickname: r.Nickname || r.nickname || r.author || r.userName || null,
+      visitCount: r.VisitCount || r.visitCount || null,
+    })).filter((r: any) => r.text) // 빈 리뷰 제거
+
+    // 메뉴 파싱 (최대 30개)
+    const rawMenus = getField('MenuItems', 'Menus', 'menus', 'menuItems', 'Menu', 'menu') || []
+    const menu = rawMenus.slice(0, 30).map((m: any) => ({
+      name: m.name || m.Name || m.menuName || m.title || '',
+      price: m.price || m.Price || m.menuPrice || '',
+      description: m.description || m.Description || m.menuDescription || '',
+      isPopular: m.isPopular || m.IsPopular || m.popular || m.isRecommend || false,
+      images: m.images || m.Images || m.imageUrls || [],
+    })).filter((m: any) => m.name) // 빈 메뉴 제거
+
+    // 이미지 파싱
+    const images = getField('Images', 'images', 'ImageUrls', 'imageUrls', 'photos', 'Photos') || []
+    const imageUrls = Array.isArray(images)
+      ? images.map((img: any) => typeof img === 'string' ? img : (img.url || img.imageUrl || img.src || '')).filter(Boolean)
+      : []
+
+    // 편의시설 파싱
+    const rawFacilities = getField('Facilities', 'facilities', 'Amenities', 'amenities', 'Options', 'options') || []
+    const facilities = Array.isArray(rawFacilities)
+      ? rawFacilities.map((f: any) => typeof f === 'string' ? f : (f.name || f.title || '')).filter(Boolean)
+      : typeof rawFacilities === 'string' ? rawFacilities.split(',').map((s: string) => s.trim()) : []
+
+    // 키워드/태그 파싱
+    const rawKeywords = getField('Keywords', 'keywords', 'Tags', 'tags', 'Hashtags', 'hashtags') || []
+    const keywords = Array.isArray(rawKeywords)
+      ? rawKeywords.map((k: any) => typeof k === 'string' ? k : (k.name || k.tag || '')).filter(Boolean)
+      : typeof rawKeywords === 'string' ? rawKeywords.split(',').map((s: string) => s.trim()) : []
+
+    // 전체 데이터 구성
+    const data: NaverPlaceData = {
+      // 기본 정보
+      name: getField('Name', 'name', 'placeName', 'PlaceName', 'title', 'Title') || '',
+      category: getField('Category', 'category', 'businessCategory', 'BusinessCategory', 'type') || '',
+      address: getField('Address', 'address', 'fullAddress', 'FullAddress', 'jibunAddress') || '',
+      roadAddress: getField('RoadAddress', 'roadAddress', 'road_address') || '',
+      phone: getField('Contact', 'Phone', 'phone', 'tel', 'Tel', 'telephone', 'phoneNumber') || '',
+      description: getField('Description', 'description', 'intro', 'Intro', 'about', 'About') || '',
+      businessHours: getField('BusinessHours', 'businessHours', 'openingHours', 'OpeningHours', 'operationTime', 'workingHours') || '',
+
+      // 평점 및 리뷰
+      rating: parseFloat(getField('OverallRating', 'Rating', 'rating', 'score', 'Score', 'averageRating')) || undefined,
+      reviewCount: parseInt(getField('ReviewCount', 'reviewCount', 'totalReviews', 'TotalReviews')) || 0,
+      visitorReviewCount: parseInt(getField('VisitorReviewCount', 'visitorReviewCount', 'visitorReviews')) || undefined,
+      blogReviewCount: parseInt(getField('BlogReviewCount', 'blogReviewCount', 'blogReviews')) || undefined,
+
+      // 리뷰 상세
+      reviews,
+
+      // 메뉴/상품
+      menu,
+
+      // 이미지
+      images: imageUrls.slice(0, 20), // 최대 20개
+      thumbnailUrl: getField('ThumbnailUrl', 'thumbnailUrl', 'thumbnail', 'Thumbnail', 'mainImage', 'imageUrl') || imageUrls[0] || '',
+
+      // 위치 정보
+      latitude: parseFloat(getField('Latitude', 'latitude', 'lat', 'Lat', 'y')) || undefined,
+      longitude: parseFloat(getField('Longitude', 'longitude', 'lng', 'Lng', 'lon', 'x')) || undefined,
+      mapUrl: getField('MapUrl', 'mapUrl', 'naverMapUrl') || '',
+      placeUrl: getField('PlaceUrl', 'placeUrl', 'url', 'Url', 'link', 'Link', 'naverPlaceUrl') || '',
+
+      // 편의시설 및 특징
+      facilities,
+      keywords,
+      options: getField('ServiceOptions', 'serviceOptions', 'services') || [],
+
+      // 영업 정보
+      openingStatus: getField('OpeningStatus', 'openingStatus', 'isOpen', 'status', 'Status') || '',
+      priceRange: getField('PriceRange', 'priceRange', 'price', 'priceLevel') || '',
+
+      // 기타 URL
+      bookingUrl: getField('BookingUrl', 'bookingUrl', 'reservationUrl', 'booking') || '',
+      orderUrl: getField('OrderUrl', 'orderUrl', 'deliveryUrl', 'order') || '',
+      homepageUrl: getField('HomepageUrl', 'homepageUrl', 'homepage', 'Homepage', 'website', 'Website') || '',
+      blogUrl: getField('BlogUrl', 'blogUrl', 'blog', 'Blog') || '',
+
+      // Raw 데이터 저장 (파싱되지 않은 필드 확인용)
+      rawData: item,
+    }
+
+    console.log('[NaverPlace] 파싱 완료:', {
+      name: data.name,
+      category: data.category,
+      reviewCount: data.reviewCount,
+      menuCount: data.menu?.length || 0,
+      imageCount: data.images?.length || 0,
+      facilitiesCount: data.facilities?.length || 0,
+    })
+
+    return { success: true, data }
+  } catch (error) {
+    console.error('[NaverPlace] 오류:', error)
+    return {
+      success: false,
+      data: null,
+      error: error instanceof Error ? error.message : '네이버 플레이스 크롤링 실패',
+    }
   }
 }
 

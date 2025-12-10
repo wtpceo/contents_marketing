@@ -12,18 +12,10 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+import type { NaverPlaceData } from './client'
+
 interface CrawledData {
-  naver?: {
-    name?: string
-    category?: string
-    address?: string
-    description?: string
-    reviews?: { text: string; rating?: number }[]
-    menu?: { name: string; price?: string }[]
-    rating?: number
-    reviewCount?: number
-    businessHours?: string
-  }
+  naver?: NaverPlaceData  // 확장된 네이버 플레이스 데이터
   instagram?: {
     username?: string
     fullName?: string
@@ -44,14 +36,31 @@ export interface FactData {
   business_name: string              // 상호명
   category: string                   // 업종/카테고리
   address: string                    // 주소
+  road_address?: string              // 도로명 주소
   business_hours: string             // 영업시간
-  menus: { name: string; price?: string }[]  // 메뉴/상품 목록
+  menus: { name: string; price?: string; description?: string; isPopular?: boolean }[]  // 메뉴/상품 목록
   facilities: string[]               // 시설 정보 (주차, 노키즈존 등)
   contact: string                    // 연락처
   rating: number | null              // 평점
   review_count: number               // 리뷰 수
+  visitor_review_count?: number      // 방문자 리뷰 수
+  blog_review_count?: number         // 블로그 리뷰 수
   review_highlights: string[]        // 리뷰에서 추출한 객관적 장점
   unique_features: string[]          // 팩트 기반 차별화 포인트
+
+  // 새로 추가된 필드들
+  images?: string[]                  // 업체 이미지 URL
+  thumbnail_url?: string             // 대표 이미지
+  latitude?: number                  // 위도
+  longitude?: number                 // 경도
+  place_url?: string                 // 네이버 플레이스 URL
+  map_url?: string                   // 지도 URL
+  homepage_url?: string              // 홈페이지
+  blog_url?: string                  // 블로그
+  booking_url?: string               // 예약 URL
+  keywords?: string[]                // 태그/키워드
+  price_range?: string               // 가격대
+  opening_status?: string            // 현재 영업 상태
 }
 
 // Style Data 인터페이스 (변경 가능 - 리브랜딩 시 대체)
@@ -78,7 +87,7 @@ export interface AdvancedProfile {
     is_rebranded: boolean
     rebranding_source?: string       // 리브랜딩 시 벤치마킹한 URL
     sources: {
-      naver?: { synced_at: string; reviews_count: number }
+      naver?: { synced_at: string; reviews_count: number; images_count?: number; menu_count?: number }
       instagram?: { synced_at: string; posts_analyzed: number }
       website?: { synced_at: string; pages_crawled: number }
     }
@@ -125,6 +134,8 @@ export async function analyzeAndRefine(
     sources.naver = {
       synced_at: new Date().toISOString(),
       reviews_count: naver.reviews?.length || 0,
+      images_count: naver.images?.length || 0,
+      menu_count: naver.menu?.length || 0,
     }
 
     dataForAnalysis.push(`
@@ -132,15 +143,28 @@ export async function analyzeAndRefine(
 상호명: ${naver.name || '알 수 없음'}
 카테고리: ${naver.category || '알 수 없음'}
 주소: ${naver.address || '알 수 없음'}
-평점: ${naver.rating || '없음'} (리뷰 ${naver.reviewCount || 0}개)
+${naver.roadAddress ? `도로명 주소: ${naver.roadAddress}` : ''}
+연락처: ${naver.phone || '정보 없음'}
+평점: ${naver.rating || '없음'} (총 리뷰 ${naver.reviewCount || 0}개, 방문자 리뷰 ${naver.visitorReviewCount || 0}개, 블로그 리뷰 ${naver.blogReviewCount || 0}개)
 영업시간: ${naver.businessHours || '정보 없음'}
+${naver.openingStatus ? `현재 영업 상태: ${naver.openingStatus}` : ''}
+${naver.priceRange ? `가격대: ${naver.priceRange}` : ''}
 소개: ${naver.description || '없음'}
 
-메뉴/상품:
-${naver.menu?.slice(0, 15).map(m => `- ${m.name} ${m.price || ''}`).join('\n') || '정보 없음'}
+${naver.facilities && naver.facilities.length > 0 ? `편의시설: ${naver.facilities.join(', ')}` : ''}
+${naver.keywords && naver.keywords.length > 0 ? `태그/키워드: ${naver.keywords.join(', ')}` : ''}
 
-고객 리뷰 (최근 30개):
-${naver.reviews?.slice(0, 30).map(r => `- "${r.text}" ${r.rating ? `(${r.rating}점)` : ''}`).join('\n') || '리뷰 없음'}
+메뉴/상품 (${naver.menu?.length || 0}개):
+${naver.menu?.slice(0, 20).map(m => `- ${m.name} ${m.price || ''} ${m.isPopular ? '⭐인기' : ''} ${m.description ? `(${m.description})` : ''}`).join('\n') || '정보 없음'}
+
+${naver.images && naver.images.length > 0 ? `이미지: ${naver.images.length}개 수집됨` : ''}
+${naver.placeUrl ? `네이버 플레이스 URL: ${naver.placeUrl}` : ''}
+${naver.homepageUrl ? `홈페이지: ${naver.homepageUrl}` : ''}
+${naver.blogUrl ? `블로그: ${naver.blogUrl}` : ''}
+${naver.bookingUrl ? `예약 URL: ${naver.bookingUrl}` : ''}
+
+고객 리뷰 (${naver.reviews?.length || 0}개 중 최대 30개 분석):
+${naver.reviews?.slice(0, 30).map(r => `- "${r.text}" ${r.rating ? `(${r.rating}점)` : ''} ${r.nickname ? `- ${r.nickname}` : ''} ${r.date ? `(${r.date})` : ''}`).join('\n') || '리뷰 없음'}
 `)
   }
 
@@ -277,19 +301,44 @@ ${options?.rebrandingMode ? '리브랜딩 모드이므로, Style은 벤치마킹
       return { success: false, profile: null, error: 'AI 응답 파싱 실패' }
     }
 
+    // 네이버 원본 데이터에서 직접 가져올 수 있는 필드들
+    const naverData = crawledData.naver
+
     // 리브랜딩 모드에서 기존 Fact 유지
     const facts: FactData = options?.existingFacts || {
-      business_name: parsed.facts?.business_name || advertiserName,
-      category: parsed.facts?.category || industry || '',
-      address: parsed.facts?.address || '',
-      business_hours: parsed.facts?.business_hours || '',
-      menus: parsed.facts?.menus || [],
-      facilities: parsed.facts?.facilities || [],
-      contact: parsed.facts?.contact || '',
-      rating: parsed.facts?.rating || null,
-      review_count: parsed.facts?.review_count || 0,
+      business_name: parsed.facts?.business_name || naverData?.name || advertiserName,
+      category: parsed.facts?.category || naverData?.category || industry || '',
+      address: parsed.facts?.address || naverData?.address || '',
+      road_address: naverData?.roadAddress || '',
+      business_hours: parsed.facts?.business_hours || naverData?.businessHours || '',
+      menus: parsed.facts?.menus || naverData?.menu?.map(m => ({
+        name: m.name,
+        price: m.price,
+        description: m.description,
+        isPopular: m.isPopular,
+      })) || [],
+      facilities: parsed.facts?.facilities || naverData?.facilities || [],
+      contact: parsed.facts?.contact || naverData?.phone || '',
+      rating: parsed.facts?.rating ?? naverData?.rating ?? null,
+      review_count: parsed.facts?.review_count || naverData?.reviewCount || 0,
+      visitor_review_count: naverData?.visitorReviewCount || 0,
+      blog_review_count: naverData?.blogReviewCount || 0,
       review_highlights: parsed.facts?.review_highlights || [],
       unique_features: parsed.facts?.unique_features || [],
+
+      // 새로 추가된 필드들 (크롤링 데이터에서 직접)
+      images: naverData?.images || [],
+      thumbnail_url: naverData?.thumbnailUrl || '',
+      latitude: naverData?.latitude || undefined,
+      longitude: naverData?.longitude || undefined,
+      place_url: naverData?.placeUrl || '',
+      map_url: naverData?.mapUrl || '',
+      homepage_url: naverData?.homepageUrl || '',
+      blog_url: naverData?.blogUrl || '',
+      booking_url: naverData?.bookingUrl || '',
+      keywords: naverData?.keywords || [],
+      price_range: naverData?.priceRange || '',
+      opening_status: naverData?.openingStatus || '',
     }
 
     const style: StyleData = {
