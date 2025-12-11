@@ -244,9 +244,13 @@ export function CalendarView() {
                 } else {
                     setProposalData(null)
                 }
+            } else {
+                // 401, 404 등 에러 응답 시 조용히 처리
+                setProposalData(null)
             }
         } catch (error) {
-            console.error("Proposal fetch error:", error)
+            // 네트워크 에러는 조용히 무시
+            setProposalData(null)
         }
     }
 

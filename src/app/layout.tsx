@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WizThePlanning Content Engine",
-  description: "B2B Content Marketing Automation SaaS",
+  title: "위플 콘텐츠마케팅 MVP",
+  description: "B2B 콘텐츠 마케팅 자동화 SaaS - AI 기반 콘텐츠 기획 및 관리 플랫폼",
 };
 
 export default function RootLayout({

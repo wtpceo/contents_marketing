@@ -54,8 +54,8 @@ export function Sidebar() {
     <div className="flex h-screen w-64 flex-col border-r border-border bg-white/50 backdrop-blur-xl">
       <div className="flex h-16 items-center border-b border-border px-6">
         <Link href="/dashboard">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
-            WCE <span className="text-xs font-normal text-muted-foreground">MVP</span>
+          <h1 className="text-lg font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+            위플 콘텐츠마케팅 <span className="text-xs font-normal text-muted-foreground">MVP</span>
           </h1>
         </Link>
       </div>
