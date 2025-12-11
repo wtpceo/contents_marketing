@@ -2,9 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// 지연 초기화로 빌드 타임 에러 방지
+function getOpenAI() {
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  })
+}
 
 interface AdvertiserProfile {
   id: string
@@ -58,7 +61,7 @@ function replaceVariables(template: string, variables: Record<string, string>): 
  */
 async function correctGrammar(text: string): Promise<string> {
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{
         role: 'user',

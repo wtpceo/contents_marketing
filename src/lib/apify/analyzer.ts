@@ -8,9 +8,12 @@
 
 import OpenAI from 'openai'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// 지연 초기화로 빌드 타임 에러 방지
+function getOpenAI() {
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  })
+}
 
 import type { NaverPlaceData } from './client'
 
@@ -281,7 +284,7 @@ ${benchmarkText}
 ${options?.rebrandingMode ? '리브랜딩 모드이므로, Style은 벤치마킹 대상의 스타일을 참고하여 추출해주세요.' : ''}`
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
@@ -424,7 +427,7 @@ ${insta.recentPosts?.slice(0, 15).map((p, i) =>
 }`
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
