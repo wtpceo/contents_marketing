@@ -3,14 +3,16 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { LayoutDashboard, Users, FileText, BarChart3, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, BarChart3, Settings, LogOut, Factory } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { CreateContentModal } from '@/components/dashboard/CreateContentModal'
 
 const navigation = [
   { name: '대시보드', href: '/dashboard', icon: LayoutDashboard },
   { name: '광고주 관리', href: '/clients', icon: Users },
   { name: '콘텐츠 에디터', href: '/editor/new', icon: FileText },
+  { name: '대량 생산', href: '/bulk-create', icon: Factory },
   { name: '인사이트', href: '/insights', icon: BarChart3 },
   { name: '설정', href: '/settings', icon: Settings },
 ]
@@ -25,6 +27,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const [user, setUser] = useState<UserProfile | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -61,12 +64,15 @@ export function Sidebar() {
       </div>
 
       <div className="p-4">
-        <Link href="/editor/new">
-          <button className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg py-2.5 font-semibold shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]">
-            <span className="text-xl leading-none">+</span> 새 콘텐츠
-          </button>
-        </Link>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg py-2.5 font-semibold shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <span className="text-xl leading-none">+</span> 새 콘텐츠
+        </button>
       </div>
+
+      <CreateContentModal open={showCreateModal} onOpenChange={setShowCreateModal} />
 
       <nav className="flex-1 space-y-1 px-3">
         {navigation.map((item) => {

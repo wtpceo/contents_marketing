@@ -18,7 +18,12 @@ import { Plus } from "lucide-react"
 import { useState, useEffect } from "react"
 import { Sparkles, ArrowRight } from "lucide-react"
 
-export function ClientDialog({ children }: { children: React.ReactNode }) {
+interface ClientDialogProps {
+    children: React.ReactNode
+    onSuccess?: () => void
+}
+
+export function ClientDialog({ children, onSuccess }: ClientDialogProps) {
     const [open, setOpen] = useState(false)
     const [step, setStep] = useState<"guide" | "form">("guide")
     const [formData, setFormData] = useState({
@@ -89,8 +94,12 @@ export function ClientDialog({ children }: { children: React.ReactNode }) {
             setFormData({ name: "", industry: "", location: "", contact: "" })
             setSelectedTones([])
 
-            // 페이지 새로고침하여 목록 갱신
-            window.location.reload()
+            // 콜백 호출 또는 페이지 새로고침
+            if (onSuccess) {
+                onSuccess()
+            } else {
+                window.location.reload()
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : "등록에 실패했습니다.")
         } finally {

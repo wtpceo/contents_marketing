@@ -26,10 +26,11 @@ export function FilterBar({ onClientChange, onChannelChange }: FilterBarProps) {
     useEffect(() => {
         const fetchClients = async () => {
             try {
-                const response = await fetch("/api/advertisers")
+                const response = await fetch("/api/advertisers?all=true")
                 if (response.ok) {
-                    const data = await response.json()
-                    setClients(data)
+                    const result = await response.json()
+                    // API가 { data: [], meta: {} } 형식으로 반환
+                    setClients(result.data || [])
                 }
             } catch (error) {
                 console.error("광고주 목록 로딩 실패:", error)

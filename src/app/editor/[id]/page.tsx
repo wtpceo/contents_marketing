@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { InstagramEditor } from "@/components/editor/InstagramEditor"
 import { ThreadsEditor } from "@/components/editor/ThreadsEditor"
-import { ArrowLeft, Save, Send, Loader2, Trash2 } from "lucide-react"
+import { ArrowLeft, Save, Send, Loader2, Trash2, RefreshCw } from "lucide-react"
+import { PublishingHelper } from "@/components/editor/PublishingHelper"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
@@ -89,10 +90,11 @@ export default function EditorPage() {
         const fetchContent = async () => {
             try {
                 // Fetch advertisers first (or parallel)
-                const advResponse = await fetch("/api/advertisers")
+                const advResponse = await fetch("/api/advertisers?all=true")
                 if (advResponse.ok) {
-                    const advData = await advResponse.json()
-                    setAdvertisers(advData)
+                    const advResult = await advResponse.json()
+                    // API가 { data: [], meta: {} } 형식으로 반환
+                    setAdvertisers(advResult.data || [])
                 }
 
                 const response = await fetch(`/api/contents/${id}`)
@@ -499,6 +501,27 @@ export default function EditorPage() {
                                 )}
                             </div>
                         </Tabs>
+
+                        {/* 배포 보조 도구: approved(Ready) 상태일 때만 표시 */}
+                        {contentData.status === 'approved' && (
+                            <div className="shrink-0 border-t bg-white p-4">
+                                <PublishingHelper
+                                    contentId={contentData.id}
+                                    advertiserName={contentData.advertisers?.name || '광고주'}
+                                    channel={normalizedActiveTab as 'blog' | 'instagram' | 'threads'}
+                                    title={contentData.title}
+                                    body={normalizedActiveTab === 'blog' ? contentMap.blog :
+                                          normalizedActiveTab === 'instagram' ? contentMap.instagram :
+                                          contentMap.threads}
+                                    hashtags={instagramMeta.hashtags}
+                                    images={instagramMeta.images}
+                                    onPublished={() => {
+                                        // 배포 완료 후 페이지 새로고침
+                                        window.location.reload()
+                                    }}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

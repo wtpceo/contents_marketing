@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { AiLearningTab } from '@/components/clients/AiLearningTab'
+import { ReportTab } from '@/components/clients/ReportTab'
 
 interface Advertiser {
     id: string
@@ -206,6 +207,7 @@ export default function ClientDetailsPage() {
                     <TabsList>
                         <TabsTrigger value="overview">기본 정보</TabsTrigger>
                         <TabsTrigger value="ai_learning">AI 학습 데이터</TabsTrigger>
+                        <TabsTrigger value="report">리포트</TabsTrigger>
                         <TabsTrigger value="advanced">고급 설정 (수동)</TabsTrigger>
                         <TabsTrigger value="contents">콘텐츠 히스토리</TabsTrigger>
                     </TabsList>
@@ -244,6 +246,13 @@ export default function ClientDetailsPage() {
                             clientId={client.id}
                             advancedProfile={client.advanced_profile}
                             onUpdate={(profile) => setClient(prev => prev ? ({ ...prev, advanced_profile: profile }) : null)}
+                        />
+                    </TabsContent>
+
+                    <TabsContent value="report">
+                        <ReportTab
+                            clientId={client.id}
+                            clientName={client.name}
                         />
                     </TabsContent>
 

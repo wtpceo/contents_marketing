@@ -95,10 +95,11 @@ export function CalendarView() {
             setLoading(true)
             try {
                 // 광고주 목록 가져오기
-                const advResponse = await fetch("/api/advertisers")
+                const advResponse = await fetch("/api/advertisers?all=true")
                 if (advResponse.ok) {
-                    const advData = await advResponse.json()
-                    setAdvertisers(advData)
+                    const advResult = await advResponse.json()
+                    // API가 { data: [], meta: {} } 형식으로 반환
+                    setAdvertisers(advResult.data || [])
                 }
 
                 // 콘텐츠(이벤트) 가져오기

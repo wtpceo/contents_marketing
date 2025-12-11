@@ -1,64 +1,57 @@
 "use client"
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { TrendingUp, Calendar, Zap, ChevronLeft, ChevronRight, RefreshCcw, Loader2 } from "lucide-react"
+import { TrendingUp, Calendar, ChevronLeft, ChevronRight, Flame, ExternalLink, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import * as React from "react"
-import { format } from "date-fns"
-import { toast } from "sonner"
+import Link from "next/link"
 
-interface Trend {
-    id: string
-    keyword: string
-    category?: string
-    traffic?: string
-    description?: string
+// URL에 프로토콜이 없으면 https:// 추가
+function ensureProtocol(url: string): string {
+    if (!url) return url
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url
+    }
+    return `https://${url}`
 }
 
-interface SeasonalIssue {
+interface TrendTopic {
     id: string
+    type: 'season' | 'realtime'
     title: string
-    date: string
-    category: string
-    is_holiday: boolean
+    description: string | null
+    reference_url: string | null
+    event_date: string | null
+    priority: number
+    is_active: boolean
+    dday?: number | null
 }
 
 export function TrendSidebar() {
-    // We can use local state for simplicity, or lift it up if needed.
-    // Given the requirement "expand calendar area", local state resizing width works perfectly in flex layout.
     const [isOpen, setIsOpen] = React.useState(true)
-    const [trends, setTrends] = React.useState<Trend[]>([])
-    const [seasonalIssues, setSeasonalIssues] = React.useState<SeasonalIssue[]>([])
+    const [seasonTopics, setSeasonTopics] = React.useState<TrendTopic[]>([])
+    const [realtimeTopics, setRealtimeTopics] = React.useState<TrendTopic[]>([])
     const [loading, setLoading] = React.useState(false)
-    const [refreshing, setRefreshing] = React.useState(false)
 
     // 초기 데이터 로드
     React.useEffect(() => {
         if (isOpen) {
             fetchData()
         }
-    }, [isOpen]) // Open될 때 로드
+    }, [isOpen])
 
     const fetchData = async () => {
         setLoading(true)
         try {
-            // 1. 시즌 이슈 (마케팅 이벤트)
-            const today = new Date()
-            const monthStr = format(today, "yyyy-MM")
-            const eventsRes = await fetch(`/api/marketing-events?month=${monthStr}&upcoming=30`)
-            if (eventsRes.ok) {
-                const eventsData = await eventsRes.json()
-                setSeasonalIssues(eventsData)
-            }
-
-            // 2. 실시간 트렌드
-            const trendsRes = await fetch(`/api/trends?month=${today.getMonth() + 1}`)
-            if (trendsRes.ok) {
-                const trendsData = await trendsRes.json()
-                // API returns { seasonal, trending, ... }
-                setTrends(trendsData.trending || [])
+            // trend_topics 테이블에서 활성화된 트렌드 조회
+            const res = await fetch('/api/trend-topics?active_only=true')
+            if (res.ok) {
+                const data = await res.json()
+                const all = data.data || []
+                setSeasonTopics(all.filter((t: TrendTopic) => t.type === 'season'))
+                setRealtimeTopics(all.filter((t: TrendTopic) => t.type === 'realtime'))
             }
         } catch (error) {
             console.error("데이터 로딩 실패:", error)
@@ -67,32 +60,11 @@ export function TrendSidebar() {
         }
     }
 
-    const handleRefresh = async () => {
-        setRefreshing(true)
-        try {
-            const res = await fetch('/api/trends', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'refresh' })
-            })
-
-            if (res.ok) {
-                toast.success("최신 트렌드를 가져왔습니다.")
-                // 다시 로드
-                const trendsRes = await fetch(`/api/trends?month=${new Date().getMonth() + 1}`)
-                if (trendsRes.ok) {
-                    const trendsData = await trendsRes.json()
-                    setTrends(trendsData.trending || [])
-                }
-            } else {
-                toast.error("갱신 실패")
-            }
-        } catch (error) {
-            console.error(error)
-            toast.error("오류가 발생했습니다.")
-        } finally {
-            setRefreshing(false)
-        }
+    const getDdayBadge = (dday: number | null | undefined) => {
+        if (dday === null || dday === undefined) return null
+        if (dday === 0) return <Badge className="bg-red-500 text-white text-[10px]">D-Day</Badge>
+        if (dday > 0) return <Badge variant="outline" className="text-[10px]">D-{dday}</Badge>
+        return <Badge variant="secondary" className="text-[10px]">D+{Math.abs(dday)}</Badge>
     }
 
     return (
@@ -113,86 +85,150 @@ export function TrendSidebar() {
 
             <div className={cn("space-y-6 h-full overflow-y-auto", !isOpen && "hidden")}>
                 {/* Header */}
-                <div className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-primary" />
-                    <h2 className="font-bold text-lg">기획 도우미</h2>
-                </div>
-
-                {/* Seasonal Issues */}
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-muted-foreground">다가오는 시즌 이슈</h3>
-                        <Badge variant="secondary" className="text-xs">{new Date().getMonth() + 1}월</Badge>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-primary" />
+                        <h2 className="font-bold text-lg">기획 도우미</h2>
                     </div>
-
-                    {seasonalIssues.length === 0 && !loading && (
-                        <div className="p-4 text-center text-xs text-muted-foreground bg-muted/30 rounded-lg">
-                            예정된 이슈가 없습니다.
-                        </div>
-                    )}
-
-                    {seasonalIssues.slice(0, 3).map((issue) => (
-                        <Card key={issue.id} className="bg-muted/50 border-dashed hover:border-primary transition-colors cursor-pointer group">
-                            <CardContent className="p-3 flex items-center gap-3">
-                                <div className="bg-white p-2 rounded-full border">
-                                    <Calendar className={cn("h-4 w-4", issue.is_holiday ? "text-red-500" : "text-blue-500")} />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-medium group-hover:text-primary transition-colors">{issue.title}</p>
-                                    <p className="text-xs text-muted-foreground">{format(new Date(issue.date), "MM.dd")} ({issue.category})</p>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-
-                {/* Real-time Trends */}
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-muted-foreground">실시간 트렌드 소재</h3>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={handleRefresh}
-                            disabled={refreshing}
-                            title="트렌드 갱신"
-                        >
-                            <RefreshCcw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+                    <Link href="/settings/trends">
+                        <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">
+                            관리
                         </Button>
-                    </div>
-
-                    <div className="space-y-2">
-                        {loading && trends.length === 0 ? (
-                            <div className="flex justify-center py-4">
-                                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                            </div>
-                        ) : (
-                            trends.slice(0, 10).map((trend) => (
-                                <div
-                                    key={trend.id}
-                                    className="flex items-center justify-between p-3 rounded-lg border bg-card hover:shadow-md transition-all cursor-grab active:cursor-grabbing"
-                                    draggable
-                                    onDragStart={(e) => {
-                                        e.dataTransfer.setData("text/plain", trend.keyword)
-                                        e.dataTransfer.effectAllowed = "copy"
-                                    }}
-                                >
-                                    <span className="text-sm font-medium truncate max-w-[180px]">{trend.keyword}</span>
-                                    <Badge variant="outline" className="text-[10px] shrink-0">{trend.category || "Trend"}</Badge>
-                                </div>
-                            ))
-                        )}
-                        {!loading && trends.length === 0 && (
-                            <div className="p-4 text-center text-xs text-muted-foreground bg-muted/30 rounded-lg">
-                                트렌드 데이터가 없습니다. <br /> 갱신 버튼을 눌러보세요.
-                            </div>
-                        )}
-                    </div>
-                    <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-800">
-                        <p>💡 팁: 트렌드를 캘린더 날짜로 드래그하면 자동으로 기획안이 생성됩니다.</p>
-                    </div>
+                    </Link>
                 </div>
+
+                {loading ? (
+                    <div className="flex justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                ) : (
+                    <>
+                        {/* 시즌 이슈 */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                                <Calendar className="h-4 w-4 text-blue-500" />
+                                <h3 className="text-sm font-semibold text-muted-foreground">다가오는 시즌 이슈</h3>
+                            </div>
+
+                            {seasonTopics.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-muted-foreground bg-muted/30 rounded-lg">
+                                    등록된 시즌 이슈가 없습니다.
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {seasonTopics.slice(0, 5).map((topic) => (
+                                        <Card
+                                            key={topic.id}
+                                            className="bg-blue-50/50 border-blue-100 hover:border-blue-300 transition-colors cursor-pointer group"
+                                            draggable
+                                            onDragStart={(e) => {
+                                                e.dataTransfer.setData("text/plain", topic.title)
+                                                e.dataTransfer.effectAllowed = "copy"
+                                            }}
+                                        >
+                                            <CardContent className="p-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium group-hover:text-blue-600 transition-colors truncate">
+                                                            {topic.title}
+                                                        </p>
+                                                        {topic.description && (
+                                                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                                                                {topic.description}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        {getDdayBadge(topic.dday)}
+                                                        {topic.reference_url && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation()
+                                                                    window.open(ensureProtocol(topic.reference_url!), '_blank')
+                                                                }}
+                                                                className="p-1 hover:bg-blue-100 rounded"
+                                                            >
+                                                                <ExternalLink className="h-3 w-3 text-blue-500" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 실시간 트렌드 */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                                <Flame className="h-4 w-4 text-orange-500" />
+                                <h3 className="text-sm font-semibold text-muted-foreground">실시간 트렌드 소재</h3>
+                            </div>
+
+                            {realtimeTopics.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-muted-foreground bg-muted/30 rounded-lg">
+                                    등록된 트렌드가 없습니다.
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {realtimeTopics.slice(0, 10).map((topic, idx) => (
+                                        <div
+                                            key={topic.id}
+                                            className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:shadow-md transition-all cursor-grab active:cursor-grabbing group"
+                                            draggable
+                                            onDragStart={(e) => {
+                                                e.dataTransfer.setData("text/plain", topic.title)
+                                                e.dataTransfer.effectAllowed = "copy"
+                                            }}
+                                        >
+                                            {/* 순위 */}
+                                            <div className={cn(
+                                                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
+                                                idx < 3
+                                                    ? "bg-gradient-to-br from-orange-400 to-red-500 text-white"
+                                                    : "bg-gray-100 text-gray-600"
+                                            )}>
+                                                {idx + 1}
+                                            </div>
+
+                                            {/* 제목 및 설명 */}
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate group-hover:text-orange-600 transition-colors">
+                                                    {topic.title}
+                                                </p>
+                                                {topic.description && (
+                                                    <p className="text-xs text-muted-foreground truncate">
+                                                        {topic.description}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            {/* 링크 */}
+                                            {topic.reference_url && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        window.open(ensureProtocol(topic.reference_url!), '_blank')
+                                                    }}
+                                                    className="p-1 hover:bg-orange-100 rounded shrink-0"
+                                                >
+                                                    <ExternalLink className="h-3 w-3 text-orange-500" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 팁 */}
+                        <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-3 rounded-lg text-xs text-blue-800 border border-blue-100">
+                            <p>💡 <strong>팁:</strong> 트렌드를 캘린더 날짜로 드래그하면 자동으로 기획안이 생성됩니다.</p>
+                        </div>
+                    </>
+                )}
             </div>
 
             {!isOpen && (
